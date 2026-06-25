@@ -45,6 +45,76 @@ pip install -r requirements.txt
 
 Python ≥ 3.10. Dipendenze principali: `numpy`, `scipy`, `matplotlib`, `rasterio`, `plotly`.
 
+## Scaricare i dati Sentinel-1
+
+I dati di input sono prodotti **Sentinel-1 IW SLC** (Single Look Complex): gli unici
+dati Sentinel-1 aperti che conservano la **fase**, indispensabile per tomografia e InSAR
+(i prodotti GRD sono solo ampiezza → inutili qui). Si scaricano dal
+**Copernicus Data Space Ecosystem (CDSE)**, gratuito.
+
+### 1. Crea un account CDSE (gratuito)
+
+Registrati su <https://dataspace.copernicus.eu> → otterrai username (email) e password.
+
+### 2. Imposta le credenziali come variabili d'ambiente
+
+La pipeline legge le credenziali da `CDSE_USER` / `CDSE_PASS` (oppure dai flag
+`--cdse-user` / `--cdse-pass`). **Non committare mai le credenziali nel repo.**
+
+PowerShell (Windows):
+```powershell
+$env:CDSE_USER = "tua-email@example.com"
+$env:CDSE_PASS = "la-tua-password"
+```
+
+Bash (Linux/macOS):
+```bash
+export CDSE_USER="tua-email@example.com"
+export CDSE_PASS="la-tua-password"
+```
+
+### 3. Cerca e scarica i prodotti per la tua area (AOI)
+
+`goal_out/piramide_unificato.py` esegue ricerca (OData CDSE) + download dei prodotti
+SLC che **contengono** il box di coordinate richiesto. L'AOI si passa in DMS
+(gradi-minuti-secondi) con gli angoli NW e SE:
+
+```bash
+python goal_out/piramide_unificato.py \
+  --nw 29 58 38.0 N  --nw-lon 31 7 45.4 E \
+  --se 29 58 29.0 N  --se-lon 31 7 55.4 E \
+  --start 2026-01-01 --end 2026-06-25 \
+  --pol vv --layers 12 \
+  --download                      # scarica davvero (servono le credenziali CDSE)
+```
+
+- Senza `--download` la ricerca viene comunque eseguita, ma **non** scarica i file:
+  riusa lo stack già presente in `goal_out/stack_slc/`.
+- I valori di default puntano già al box della piramide di **Khafre (Chefren)** sul
+  plateau di Giza.
+- ⚠️ Ogni prodotto `.SAFE` pesa **~8 GB**: assicurati di avere spazio e banda.
+
+### 4. (Alternativa) lettura/ritaglio di un singolo TIFF già scaricato
+
+Se hai già i `.tiff` SLC + i rispettivi `*.annotation.xml`, puoi estrarre direttamente
+il chip complesso co-registrato nel box con la skill `sentinel1-slc-reader`:
+
+```bash
+python skills/sentinel1-slc-reader/scripts/extract_box.py \
+  --stack /percorso/stack_slc \
+  --nw 29 58 38.0 N 31 7 45.4 E \
+  --se 29 58 29.0 N 31 7 55.4 E \
+  --pol vv --out box.npz
+```
+
+Lo script abbina ogni TIFF alla sua annotazione, geolocalizza il box via GCP e legge
+**solo** la finestra del box (mai l'intera scena da ~1.5 GB).
+
+> 💡 In alternativa puoi scaricare i prodotti a mano dal browser CDSE
+> (<https://browser.dataspace.copernicus.eu>) filtrando per *Sentinel-1 → SLC → IW*,
+> poi scompattare i `.SAFE` in `goal_out/stack_slc/` ed eseguire la pipeline con
+> `--steps 3-6` (solo elaborazione, dati locali).
+
 ## Dati
 
 > ⚠️ I dati grezzi (`.SAFE`, `.tiff`, `.zip`), gli array intermedi (`.npz`) e i render
