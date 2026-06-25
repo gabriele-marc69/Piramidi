@@ -1,5 +1,10 @@
 # Piramidi — SAR micro-Doppler tomography del plateau di Giza
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
+[![Data: Sentinel-1 SLC](https://img.shields.io/badge/Data-Sentinel--1%20SLC-1f6feb.svg)](https://dataspace.copernicus.eu)
+[![Made with NumPy](https://img.shields.io/badge/SciPy-NumPy%20%7C%20rasterio%20%7C%20plotly-013243.svg)](requirements.txt)
+
 Pipeline Python per la **tomografia micro-Doppler** e la **micro-displacement DInSAR** a
 partire da uno stack SLC Sentinel-1, ispirata a Biondi & Malanga
 (*Remote Sens.* 2022, 14, 5231; [arXiv:2206.09200](https://arxiv.org/abs/2206.09200)).
@@ -9,6 +14,35 @@ slice di riflettività, mappe di altezza, forme d'onda DInSAR) partendo da dati 
 aperti, documentando onestamente il limite fisico: pochi look tomografici su un box piccolo
 ⇒ bassa altezza di ambiguità (`z_amb ≈ 8.5 m` per il box di Khafre), quindi la profondità
 assoluta a scala di piramide non è recuperabile.
+
+## Quickstart
+
+```bash
+# 1. Clona il repository
+git clone https://github.com/gabriele-marc69/Piramidi.git
+cd Piramidi
+
+# 2. Crea un ambiente virtuale e installa le dipendenze
+python -m venv .venv
+# Windows:  .venv\Scripts\activate
+# Linux/mac: source .venv/bin/activate
+pip install -r requirements.txt
+
+# 3. Imposta le credenziali Copernicus CDSE (account gratuito su dataspace.copernicus.eu)
+#    PowerShell:  $env:CDSE_USER="email"; $env:CDSE_PASS="password"
+export CDSE_USER="tua-email@example.com"
+export CDSE_PASS="la-tua-password"
+
+# 4. Esegui la pipeline completa (ricerca + download + 6 step) sul box di default (Khafre)
+python goal_out/piramide_unificato.py --download
+
+# Solo elaborazione su dati già presenti in goal_out/stack_slc/ (niente download):
+python goal_out/piramide_unificato.py --steps 3-6
+```
+
+Output (grafici 3D `.html`/`.png`, array `.npz`) finiscono in `goal_out/unificato/`.
+Per AOI, date e polarizzazione personalizzate vedi
+[Scaricare i dati Sentinel-1](#scaricare-i-dati-sentinel-1).
 
 ## Struttura
 
