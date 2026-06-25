@@ -1,0 +1,7 @@
+/goal usando le skills acquisite esegui:
+  1) scarica i dati satellitari necessari nelle coordinate richieste
+  2) ritaglia l'area dai file .tiff
+  3) genera e salva un array 3d dove x e y sono i punti del piano compresi tra le coordinate e y gli strati dei piani degli spostamenti ricavati dall'analisi dei file .tiff  
+  4) usando i dati dell'array 3d genera un altro array 3d usando come i dati y come parametri di una funzione di Fourier stirate in un range di 1000 metri
+  5) disegna un grafico 3d dinamico con le funzioni di Fourier generate 
+  6) considera il grafico 3d, funzione per funzione punto per punto e genera un altro grafico dove metti i punti dove c'è una variazione di frequenza e quindi di densità  

@@ -1,0 +1,17 @@
+# Normalizza i fine-riga: testo gestito automaticamente da Git
+* text=auto
+
+# Script e documentazione: LF nel repository
+*.py   text eol=lf
+*.md   text eol=lf
+*.txt  text eol=lf
+*.json text eol=lf
+
+# Binari: nessuna conversione
+*.npz  binary
+*.npy  binary
+*.png  binary
+*.pdf  binary
+*.tif  binary
+*.tiff binary
+*.zip  binary

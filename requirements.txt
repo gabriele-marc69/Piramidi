@@ -1,0 +1,6 @@
+# Dipendenze pipeline SAR micro-Doppler tomography (Piramidi di Giza)
+numpy>=1.24
+scipy>=1.10
+matplotlib>=3.7
+rasterio>=1.3
+plotly>=5.18
