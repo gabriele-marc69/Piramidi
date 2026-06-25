@@ -44,6 +44,17 @@ Output (grafici 3D `.html`/`.png`, array `.npz`) finiscono in `goal_out/unificat
 Per AOI, date e polarizzazione personalizzate vedi
 [Scaricare i dati Sentinel-1](#scaricare-i-dati-sentinel-1).
 
+## Visualizzazioni interattive
+
+I grafici 3D sono salvati come HTML Plotly interattivi (ruota/zoom nel browser).
+GitHub non li renderizza nella vista del repo, quindi aprili tramite un proxy che li
+serve come pagina:
+
+- 👁️ **Step 6 — variazioni di frequenza/densità (3D):**
+  [apri nel browser](https://raw.githack.com/gabriele-marc69/Piramidi/main/step6_variazioni_3d.html)
+  · [pagina GitHub Pages](https://gabriele-marc69.github.io/Piramidi/step6_variazioni_3d.html)
+  *(quest'ultima attiva dopo aver abilitato GitHub Pages su branch `main`/root)*
+
 ## Struttura
 
 ```
