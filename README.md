@@ -33,14 +33,17 @@ pip install -r requirements.txt
 export CDSE_USER="tua-email@example.com"
 export CDSE_PASS="la-tua-password"
 
-# 4. Esegui la pipeline completa (ricerca + download + 6 step) sul box di default (Khafre)
-python goal_out/piramide_unificato.py --download
+# 4. Esegui la pipeline completa (ricerca + download + 6 step).
+#    C'è una cartella per piramide, ciascuna con i box di default già impostati:
+python goal_out_Cheope/piramide_unificato.py --download   # Cheope (Khufu)
+python goal_out_kefren/piramide_unificato.py --download   # Kefren (Khafre)
 
-# Solo elaborazione su dati già presenti in goal_out/stack_slc/ (niente download):
-python goal_out/piramide_unificato.py --steps 3-6
+# Solo elaborazione su dati già presenti nello stack_slc/ della cartella (niente download):
+python goal_out_kefren/piramide_unificato.py --steps 3-6
 ```
 
-Output (grafici 3D `.html`/`.png`, array `.npz`) finiscono in `goal_out/unificato/`.
+Output (grafici 3D `.html`/`.png`, array `.npz`) finiscono nella sottocartella di output
+della rispettiva piramide (`unificato/`, non versionata).
 Per AOI, date e polarizzazione personalizzate vedi
 [Scaricare i dati Sentinel-1](#scaricare-i-dati-sentinel-1).
 
@@ -63,12 +66,14 @@ serve come pagina:
 │   ├── sentinel1-slc-reader/     # lettura SLC + geolocalizzazione box via GCP → .npz
 │   ├── sar-doppler-tomography/   # sub-aperture Doppler + inversione tomografica
 │   └── sar-dinsar-microdisplacement/  # micro-spostamenti LOS da fase interferometrica
-├── goal_out/                     # script della pipeline e output (output non versionati)
+├── goal_out_Cheope/              # pipeline + output per la piramide di Cheope (Khufu)
 │   ├── goal_pipeline.py          # pipeline a 6 step (vedi skills/goal.txt)
-│   ├── piramide_unificato.py     # pipeline unificata
+│   ├── piramide_unificato.py     # pipeline unificata (box di default = Cheope)
 │   ├── trasformata_fourier.py    # parametrizzazione Fourier degli strati
 │   ├── tomografia_verticale.py   # sezioni verticali
 │   └── ...                       # grafici 3D, picchi, variazioni di frequenza
+├── goal_out_kefren/              # stessa pipeline, box di default = Kefren (Khafre)
+│   └── ...                       # (output .npz/.png/.html non versionati)
 ├── requirements.txt
 └── .gitignore
 ```
@@ -120,12 +125,12 @@ export CDSE_PASS="la-tua-password"
 
 ### 3. Cerca e scarica i prodotti per la tua area (AOI)
 
-`goal_out/piramide_unificato.py` esegue ricerca (OData CDSE) + download dei prodotti
+`piramide_unificato.py` esegue ricerca (OData CDSE) + download dei prodotti
 SLC che **contengono** il box di coordinate richiesto. L'AOI si passa in DMS
 (gradi-minuti-secondi) con gli angoli NW e SE:
 
 ```bash
-python goal_out/piramide_unificato.py \
+python goal_out_kefren/piramide_unificato.py \
   --nw 29 58 38.0 N  --nw-lon 31 7 45.4 E \
   --se 29 58 29.0 N  --se-lon 31 7 55.4 E \
   --start 2026-01-01 --end 2026-06-25 \
@@ -134,8 +139,9 @@ python goal_out/piramide_unificato.py \
 ```
 
 - Senza `--download` la ricerca viene comunque eseguita, ma **non** scarica i file:
-  riusa lo stack già presente in `goal_out/stack_slc/`.
-- I valori di default puntano già al box della piramide di **Khafre (Chefren)** sul
+  riusa lo stack già presente in `stack_slc/` della cartella.
+- I box di default sono già impostati per piramide: **Cheope (Khufu)** in
+  `goal_out_Cheope/` e **Khafre (Chefren)** in `goal_out_kefren/`, entrambe sul
   plateau di Giza.
 - ⚠️ Ogni prodotto `.SAFE` pesa **~8 GB**: assicurati di avere spazio e banda.
 
@@ -157,7 +163,7 @@ Lo script abbina ogni TIFF alla sua annotazione, geolocalizza il box via GCP e l
 
 > 💡 In alternativa puoi scaricare i prodotti a mano dal browser CDSE
 > (<https://browser.dataspace.copernicus.eu>) filtrando per *Sentinel-1 → SLC → IW*,
-> poi scompattare i `.SAFE` in `goal_out/stack_slc/` ed eseguire la pipeline con
+> poi scompattare i `.SAFE` nello `stack_slc/` della cartella della piramide ed eseguire la pipeline con
 > `--steps 3-6` (solo elaborazione, dati locali).
 
 ## Dati

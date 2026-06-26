@@ -645,9 +645,6 @@ def parse_steps(s):
 
 
 def main():
-    #CDSE_USER = 'redacted@example.com'
-    #CDSE_PASS = 'REDACTED'
-    
     global DBG
     ap = argparse.ArgumentParser(description="Pipeline unica piramide (step 1-6)")
     ap.add_argument("--nw", nargs=4, metavar=("D", "M", "S", "H"),
@@ -666,9 +663,9 @@ def main():
     ap.add_argument("--stack", default=None, help="cartella TIFF scaricati")
     ap.add_argument("--outdir", default=None, help="cartella output")
     ap.add_argument("--download", action="store_true", help="scarica davvero (servono credenziali CDSE)")
-    ap.add_argument("--cdse-user", default='redacted@example.com',
+    ap.add_argument("--cdse-user", default=None,
                     help="username/email CDSE (altrimenti env CDSE_USER)")
-    ap.add_argument("--cdse-pass", default='REDACTED',
+    ap.add_argument("--cdse-pass", default=None,
                     help="password CDSE (altrimenti env CDSE_PASS)")
     ap.add_argument("--steps", default="1-6", help="es. 1-6 oppure 3,4,5")
     ap.add_argument("--dmin", type=float, default=0.035,

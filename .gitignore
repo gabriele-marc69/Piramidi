@@ -11,6 +11,7 @@ goal_out/stack_slc/
 # Array e dataset numerici
 *.npz
 *.npy
+*.bak
 
 # Output grafici / render
 *.png
@@ -61,3 +62,7 @@ Thumbs.db
 _smoke_tomo/
 goal_out/rettangolo/
 goal_out/unificato/
+# stesse cartelle di lavoro per le pipeline per-piramide (goal_out_*)
+rettangolo/
+unificato/
+s1d/

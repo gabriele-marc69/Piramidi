@@ -32,9 +32,12 @@ Esempio:
 
 Credenziali download (step 2), via variabili d'ambiente:
   CDSE_USER / CDSE_PASS   (account gratuito su dataspace.copernicus.eu)
+
+
+  
 """
 import os, sys, re, glob, json, time, zipfile, argparse
-import urllib.request, urllib.parse
+import urllib.request, urllib.parse, urllib.error
 import numpy as np
 
 # matplotlib/scipy/plotly importati lazy negli step che li usano, cosi' gli step
@@ -47,6 +50,7 @@ except Exception:
 
 C = 299_792_458.0
 DBG = False
+MIN_VALID_PCT = 50.0   # step 3: copertura minima dell'AOI in un sub-swath per tenerlo
 
 
 def log(*a):
@@ -112,7 +116,22 @@ def _cdse_token(user, pwd):
         return json.load(r)["access_token"]
 
 
-def step2_scarica(prods, n_want, pol, stackdir, user=None, pwd=None):
+class _AuthRedirect(urllib.request.HTTPRedirectHandler):
+    """Conserva l'header Authorization quando CDSE reindirizza dal catalogo al nodo
+    di download: urllib di default lo rimuove sui redirect cross-host -> HTTP 401."""
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        new = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if new is not None:
+            auth = req.get_header("Authorization")
+            if auth:
+                new.add_unredirected_header("Authorization", auth)
+        return new
+
+
+_CDSE_OPENER = urllib.request.build_opener(_AuthRedirect())
+
+
+def step2_scarica(prods, n_want, pol, stackdir, user=None, pwd=None, download=False):
     """Scarica i prodotti e ne estrae i measurement TIFF (+ annotation) della
     polarizzazione richiesta nello stack locale. Credenziali CDSE: dai parametri
     --cdse-user/--cdse-pass oppure dalle variabili d'ambiente CDSE_USER/CDSE_PASS.
@@ -124,7 +143,19 @@ def step2_scarica(prods, n_want, pol, stackdir, user=None, pwd=None):
     user = user or os.environ.get("CDSE_USER")
     pwd = pwd or os.environ.get("CDSE_PASS")
     if not prods:
-        log("[2] nessun prodotto dalla ricerca: salto il download")
+        log("[2] nessun prodotto dalla ricerca: uso i TIFF gia' presenti nello stack")
+        return have
+    # i prodotti trovati dallo step 1 CONTENGONO le coordinate richieste
+    log(f"[2] {len(prods)} prodotti dalla ricerca contengono le coordinate "
+        f"(ne servono >={n_want})")
+    for p in prods[:n_want]:
+        log(f"      - {p['Name']}  ({p.get('ContentLength', 0)/1e9:.1f} GB)")
+    if not download:
+        log("[2] download non richiesto (manca --download): uso lo stack locale.")
+        log(f"    -> i SAFE pesano ~8 GB l'uno. Per scaricare davvero i {len(prods)} "
+            "prodotti trovati aggiungi")
+        log("       --download  con  --cdse-user <user> --cdse-pass <pass>  "
+            "(o le env CDSE_USER/CDSE_PASS)")
         return have
     if not (user and pwd):
         log("[2] credenziali CDSE assenti: salto il download.")
@@ -132,7 +163,7 @@ def step2_scarica(prods, n_want, pol, stackdir, user=None, pwd=None):
         log("       --cdse-user <user> --cdse-pass <pass>  (o le env CDSE_USER/CDSE_PASS)")
         return have
     try:
-        tok = _cdse_token(user, pwd)
+        tok = _cdse_token(user, pwd); tok_t = time.time()
     except Exception as ex:
         log(f"[2] login CDSE fallito ({ex}); salto il download"); return have
 
@@ -140,18 +171,35 @@ def step2_scarica(prods, n_want, pol, stackdir, user=None, pwd=None):
     for p in prods:
         if len([g for g in got]) >= n_want:
             break
+        # il token CDSE scade in ~10 min: rinnovalo se vecchio (download da ~8 GB lenti)
+        if time.time() - tok_t > 480:
+            try:
+                tok = _cdse_token(user, pwd); tok_t = time.time()
+            except Exception as ex:
+                log(f"    ! rinnovo token fallito ({ex}); interrompo i download"); break
         safe_zip = os.path.join(stackdir, p["Name"].replace(".SAFE", "") + ".zip")
         url = (f"https://catalogue.dataspace.copernicus.eu/odata/v1/"
                f"Products({p['Id']})/$value")
         log(f"[2] scarico {p['Name']} ({p['ContentLength']/1e9:.1f} GB) ...")
         try:
             req = urllib.request.Request(url, headers={"Authorization": f"Bearer {tok}"})
-            with urllib.request.urlopen(req, timeout=1800) as r, open(safe_zip, "wb") as fo:
+            # _CDSE_OPENER conserva l'Authorization sul redirect verso il nodo download
+            with _CDSE_OPENER.open(req, timeout=1800) as r, open(safe_zip, "wb") as fo:
                 while True:
                     chunk = r.read(1 << 20)
                     if not chunk:
                         break
                     fo.write(chunk)
+        except urllib.error.HTTPError as ex:
+            if ex.code == 401:
+                log("    ! 401 Unauthorized: credenziali CDSE errate/non confermate "
+                    "(verifica l'account su dataspace.copernicus.eu) o token scaduto")
+            else:
+                log(f"    ! download fallito (HTTP {ex.code}); continuo")
+            continue
+        except urllib.error.URLError as ex:
+            log(f"    ! download fallito (rete: {ex.reason}); controlla la connessione "
+                "e riprova"); continue
         except Exception as ex:
             log(f"    ! download fallito ({ex}); continuo"); continue
         # estrai dal SAFE i measurement tiff + annotation della polarizzazione
@@ -186,6 +234,11 @@ def _trova_annotation(tif, stack, pol):
     s, sw, dt = m.groups()
     for x in glob.glob(os.path.join(stack, "*.annotation.xml")):
         xb = os.path.basename(x).lower()
+        # scarta le annotazioni ausiliarie del SAFE (rfi/calibration/noise): non
+        # contengono la geometria del prodotto (radarFrequency, ecc.). Quella di
+        # prodotto inizia col nome satellite (es. 's1a-iw2-slc-...').
+        if not xb.startswith(("s1a-", "s1b-", "s1c-", "s1d-")):
+            continue
         if s in xb and f"iw{sw}" in xb and dt in xb:
             return x
 
@@ -212,7 +265,83 @@ def _leggi_complesso(ds, win):
     return a.astype(np.complex64)
 
 
-def step3_estrai_box(stackdir, pol, aoi, boxpath, fallback_box):
+def _acq_secs(nome):
+    """Secondi-del-giorno dell'istante di acquisizione (HHMMSS nel nome SAFE/TIFF).
+    Scene dello STESSO relative orbit (track) sovrappongono l'AOI quasi alla stessa
+    ora del giorno: questo e' un identificatore robusto del track."""
+    m = re.search(r"(\d{8})t(\d{2})(\d{2})(\d{2})", nome.lower())
+    if not m:
+        return None
+    return int(m.group(2)) * 3600 + int(m.group(3)) * 60 + int(m.group(4))
+
+
+def _subpix_offset(ref, mov):
+    """Offset sub-pixel (d_az, d_rng) che porta 'mov' su 'ref' + correlazione di
+    picco, via cross-correlazione FFT delle ampiezze con interpolazione parabolica.
+    Serve a VERIFICARE quanto due scene si sfasano (diagnostica), non a co-registrare
+    (il geocoding via GCP allinea gia' le scene dello stesso track)."""
+    naz, nrg = ref.shape
+    a = np.abs(ref).astype(float); b = np.abs(mov).astype(float)
+    a = (a - a.mean()) / (a.std() + 1e-9); b = (b - b.mean()) / (b.std() + 1e-9)
+    c = np.fft.fftshift(np.fft.ifft2(np.fft.fft2(a) * np.conj(np.fft.fft2(b))).real)
+    p = np.unravel_index(np.argmax(c), c.shape)
+
+    def par(i, ax):
+        s = c.shape[ax]; im, ip = (i - 1) % s, (i + 1) % s
+        y = (c[im, p[1]], c[i, p[1]], c[ip, p[1]]) if ax == 0 else \
+            (c[p[0], im], c[p[0], i], c[p[0], ip])
+        den = (y[0] - 2 * y[1] + y[2])
+        return 0.0 if den == 0 else 0.5 * (y[0] - y[2]) / den
+
+    daz = (p[0] - naz // 2) + par(p[0], 0)
+    drg = (p[1] - nrg // 2) + par(p[1], 1)
+    corr = c.max() / (np.sqrt((a ** 2).sum() * (b ** 2).sum()) + 1e-9)
+    return daz, drg, corr
+
+
+def _verifica_e_filtra_track(chips, nomi, geom, tol_s=20, track_filter=True):
+    """VERIFICA le coordinate/geometria delle scene e quanto si sfasano tra loro,
+    poi (se track_filter) tiene solo le scene del relative orbit dominante: scene di
+    track diversi sono decorrelate e degradano coerenza e quote. Ritorna gli indici
+    da tenere e la diagnostica (offset px/m + correlazione per scena)."""
+    n = len(chips)
+    dR = geom["dR"]; dA = geom["dA"]; inc = geom["incid_mid"]
+    gr = dR / np.sin(np.radians(inc))            # passo ground-range [m]
+    secs = [_acq_secs(x) for x in nomi]
+    # raggruppa per ora-del-giorno (track): cluster entro tol_s secondi
+    groups = []
+    for i, s in enumerate(secs):
+        for grp in groups:
+            if s is not None and abs(s - secs[grp[0]]) <= tol_s:
+                grp.append(i); break
+        else:
+            groups.append([i])
+    groups.sort(key=lambda g: (-len(g), secs[g[0]] or 0))
+    keep = sorted(groups[0]) if (track_filter and groups) else list(range(n))
+    ref = keep[0]                                # riferimento = 1a scena del track tenuto
+
+    log(f"[3] VERIFICA scene: {n} ritagliate, {len(groups)} track distinti "
+        f"(per ora di acquisizione, tol {tol_s}s)")
+    log(f"      {'data':<10}{'sat':<5}{'acq UTC':>9}{'d_az[px]':>9}{'d_rg[px]':>9}"
+        f"{'d_az[m]':>9}{'d_rg[m]':>9}{'corr':>7}  nota")
+    diag = []
+    for i in range(n):
+        daz, drg, corr = _subpix_offset(chips[ref], chips[i])
+        hh = secs[i]
+        acq = f"{hh//3600:02d}:{(hh%3600)//60:02d}:{hh%60:02d}" if hh is not None else "??"
+        dt = _data_scena(nomi[i]); sat = nomi[i][:3]
+        nota = "RIF" if i == ref else ("tenuta" if i in keep
+               else "ESCLUSA (track diverso)")
+        log(f"      {dt:<10}{sat:<5}{acq:>9}{daz:>9.2f}{drg:>9.2f}"
+            f"{daz*dA:>9.1f}{drg*gr:>9.1f}{corr:>7.2f}  {nota}")
+        diag.append((dt, sat, daz, drg, corr, i in keep))
+    if track_filter and len(keep) < n:
+        log(f"[3] track dominante: {len(keep)}/{n} scene tenute "
+            f"(escluse {n-len(keep)} di altri track -> avrebbero decorrelato le quote)")
+    return keep, diag
+
+
+def step3_estrai_box(stackdir, pol, aoi, boxpath, fallback_box, track_filter=True):
     """Geolocalizza l'AOI su ogni TIFF via i GCP e ritaglia lo stack complesso."""
     lonW, lonE, latS, latN = aoi
     corners = [(lonW, latN), (lonE, latN), (lonE, latS), (lonW, latS)]
@@ -251,15 +380,29 @@ def step3_estrai_box(stackdir, pol, aoi, boxpath, fallback_box):
         valid = float(np.mean(np.abs(chip) > 0) * 100)
         log(f"    >> {os.path.basename(tif)} {chip.shape[1]}x{chip.shape[0]}px "
             f"(rng x az) valid {valid:.0f}%")
+        # un chip quasi tutto-zeri = AOI sul bordo dello swath / fuori dal burst:
+        # non copre davvero l'area e inquinerebbe gli interferogrammi -> scarta
+        if valid < MIN_VALID_PCT:
+            log(f"       (copertura {valid:.0f}% < {MIN_VALID_PCT:.0f}%: l'AOI non e' "
+                "nello swath di questo sub-swath, skip)")
+            continue
         chips.append(chip); nomi.append(os.path.basename(tif)); geom = g
     if not chips:
         sys.exit("[3] nessuna scena copre l'AOI")
     H = min(c.shape[0] for c in chips); W = min(c.shape[1] for c in chips)
-    arr = np.stack([c[:H, :W] for c in chips], 0)
-    np.savez_compressed(boxpath, vv=arr, vv_scene=np.array(nomi),
+    chips = [c[:H, :W] for c in chips]
+    # verifica geometria/sfasamento tra le scene e tiene solo il track dominante
+    keep, diag = _verifica_e_filtra_track(chips, nomi, geom, track_filter=track_filter)
+    arr = np.stack([chips[i] for i in keep], 0)
+    nomi_k = [nomi[i] for i in keep]
+    off_az = np.array([diag[i][2] for i in keep], np.float32)
+    off_rg = np.array([diag[i][3] for i in keep], np.float32)
+    corr_ref = np.array([diag[i][4] for i in keep], np.float32)
+    np.savez_compressed(boxpath, vv=arr, vv_scene=np.array(nomi_k),
                         corners_lonlat=np.array(corners),
                         dR=geom["dR"], dA=geom["dA"], incid_mid=geom["incid_mid"],
-                        f_em=geom["f_em"], R_near=geom["R_near"], dt_az=geom["dt_az"])
+                        f_em=geom["f_em"], R_near=geom["R_near"], dt_az=geom["dt_az"],
+                        off_az_px=off_az, off_rg_px=off_rg, corr_ref=corr_ref)
     log(f"[3] stack ritagliato {arr.shape} (n_scene, az, rng) -> {boxpath}")
     return boxpath
 
@@ -302,6 +445,13 @@ def step4_array_12(boxpath, n_layers, outdir):
                  for i in range(nS - 1)][:n_layers]
     else:
         pairs = pairs[:n_layers]
+    if len(pairs) == 0:
+        sys.exit(
+            f"[4] impossibile proseguire: l'interferometria richiede ALMENO 2 "
+            f"acquisizioni dello stesso track, ma lo stack ne contiene {nS} "
+            f"(date: {sorted(set(date))}).\n"
+            f"    -> scarica altre date con --download e credenziali CDSE valide "
+            f"(il download nello step 2 e' fallito: 401 Unauthorized / rete assente).")
     if len(pairs) < n_layers:
         log(f"[4] ATTENZIONE: solo {len(pairs)} coppie disponibili (< {n_layers})")
 
@@ -355,11 +505,16 @@ def _fetch_dem(aoi, ny, nx, outdir, pyramid):
     j = np.arange(nx); i = np.arange(ny)
     lon = lonW + (j / max(nx - 1, 1)) * (lonE - lonW)
     lat = latS + (i / max(ny - 1, 1)) * (latN - latS)
+    z0 = None
     if os.path.exists(cache):
         # la cache contiene il DEM NUDO (senza overlay piramide)
-        z0 = np.load(cache)["z0"].astype(float)
-        log(f"[DEM] riuso {cache}: quota terreno {z0.min():.0f}..{z0.max():.0f} m s.l.m.")
-    else:
+        cached = np.load(cache)["z0"].astype(float)
+        if cached.shape == (ny, nx):
+            z0 = cached
+            log(f"[DEM] riuso {cache}: quota terreno {z0.min():.0f}..{z0.max():.0f} m s.l.m.")
+        else:
+            log(f"[DEM] cache {cache} ignorata: shape {cached.shape} != griglia ({ny},{nx})")
+    if z0 is None:
         GC = 10
         CLAT, CLON = np.meshgrid(np.linspace(latS, latN, GC),
                                  np.linspace(lonW, lonE, GC), indexing="ij")
@@ -576,8 +731,91 @@ def step6_variazioni(w, z, x_m, y_m, z0, Lx, Ly, ZD, ZTOP, ZBOT, outdir,
                    zaxis=dict(range=[ZBOT, ZTOP]),
                    aspectmode="manual",
                    aspectratio=dict(x=1.0, y=Ly / Lx, z=(ZTOP - ZBOT) / Lx)))
+    # --- pulsante per esportare i 2 piani di sezione (E-W e N-S) del punto in fuoco ---
+    # dati dei punti (arrotondati per ridurre il peso dell'HTML) + tolleranze di griglia
+    import json
+    dx = float(np.min(np.diff(x_m))) if len(x_m) > 1 else 1.0
+    dy = float(np.min(np.diff(y_m))) if len(y_m) > 1 else 1.0
+    cs = dict(PX=[round(float(v), 2) for v in px],
+              PY=[round(float(v), 2) for v in py],
+              PZ=[round(float(v), 2) for v in pz],
+              PV=[round(float(v), 5) for v in pv],
+              TOLX=dx / 2.0, TOLY=dy / 2.0)
+    post_script = """
+var gd = document.getElementById('{plot_id}');
+var CS = __CSDATA__;
+var sel = {x: null, y: null, z: null};
+
+var bar = document.createElement('div');
+bar.style.cssText = 'position:fixed;top:10px;left:10px;z-index:1000;background:rgba(255,255,255,0.92);' +
+    'padding:8px 10px;border:1px solid #888;border-radius:6px;font-family:sans-serif;font-size:13px;' +
+    'box-shadow:0 1px 4px rgba(0,0,0,0.3)';
+var info = document.createElement('div');
+info.style.marginBottom = '6px';
+info.textContent = 'Clicca un punto per dargli il fuoco';
+var btn = document.createElement('button');
+btn.textContent = 'Salva piani E-W & N-S (PNG)';
+btn.disabled = true;
+btn.style.cssText = 'cursor:pointer;padding:5px 8px;font-size:13px';
+bar.appendChild(info); bar.appendChild(btn);
+document.body.appendChild(bar);
+
+gd.on('plotly_click', function(d){
+    if(!d || !d.points || !d.points.length) return;
+    var p = d.points[0];
+    sel.x = p.x; sel.y = p.y; sel.z = p.z;
+    info.textContent = 'Fuoco: x=' + Math.round(sel.x) + ' m, y=' + Math.round(sel.y) +
+        ' m, quota=' + Math.round(sel.z) + ' m';
+    btn.disabled = false;
+});
+
+btn.onclick = function(){
+    if(sel.x === null) return;
+    var ewx=[], ewz=[], ewc=[], nsy=[], nsz=[], nsc=[];
+    for(var i=0; i<CS.PX.length; i++){
+        if(Math.abs(CS.PY[i] - sel.y) <= CS.TOLY){ ewx.push(CS.PX[i]); ewz.push(CS.PZ[i]); ewc.push(CS.PV[i]); }
+        if(Math.abs(CS.PX[i] - sel.x) <= CS.TOLX){ nsy.push(CS.PY[i]); nsz.push(CS.PZ[i]); nsc.push(CS.PV[i]); }
+    }
+    var t1 = {type:'scatter', mode:'markers', x:ewx, y:ewz, name:'E-W',
+        marker:{size:5, color:ewc, colorscale:'Inferno', colorbar:{title:'|\\u0394freq|', x:1.0, len:0.9}},
+        xaxis:'x', yaxis:'y'};
+    var t2 = {type:'scatter', mode:'markers', x:nsy, y:nsz, name:'N-S',
+        marker:{size:5, color:nsc, colorscale:'Inferno', showscale:false},
+        xaxis:'x2', yaxis:'y2'};
+    var layout = {
+        width:1300, height:600, showlegend:false,
+        title:'Piani di sezione sul fuoco  x=' + Math.round(sel.x) + ' m, y=' + Math.round(sel.y) +
+            ' m, quota=' + Math.round(sel.z) + ' m',
+        grid:{rows:1, columns:2, pattern:'independent'},
+        xaxis:{title:'x E-W [m]', anchor:'y'},
+        yaxis:{title:'quota s.l.m. [m]'},
+        xaxis2:{title:'y N-S [m]', anchor:'y2'},
+        yaxis2:{title:'quota s.l.m. [m]'},
+        annotations:[
+            {text:'Piano E-W (y=' + Math.round(sel.y) + ' m)  \\u2014 ' + ewx.length + ' punti',
+                x:0.2, xref:'paper', y:1.06, yref:'paper', showarrow:false, font:{size:13}},
+            {text:'Piano N-S (x=' + Math.round(sel.x) + ' m)  \\u2014 ' + nsy.length + ' punti',
+                x:0.8, xref:'paper', y:1.06, yref:'paper', showarrow:false, font:{size:13}}
+        ]
+    };
+    var hidden = document.createElement('div');
+    hidden.style.cssText = 'position:absolute;left:-9999px;top:-9999px';
+    document.body.appendChild(hidden);
+    Plotly.newPlot(hidden, [t1, t2], layout).then(function(){
+        return Plotly.toImage(hidden, {format:'png', width:1300, height:600});
+    }).then(function(url){
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = 'piani_EW_NS_x' + Math.round(sel.x) + '_y' + Math.round(sel.y) + '.png';
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        Plotly.purge(hidden); document.body.removeChild(hidden);
+    });
+};
+""".replace("__CSDATA__", json.dumps(cs))
+
     fig.write_html(os.path.join(outdir, "step6_variazioni_3d.html"),
                    include_plotlyjs="cdn",
+                   post_script=post_script,
                    config=dict(scrollZoom=True, displayModeBar=True))
 
     figm = plt.figure(figsize=(8, 9)); ax = figm.add_subplot(111, projection="3d")
@@ -602,6 +840,7 @@ def parse_steps(s):
 
 def main():
     global DBG
+
     ap = argparse.ArgumentParser(description="Pipeline unica piramide (step 1-6)")
     ap.add_argument("--nw", nargs=4, metavar=("D", "M", "S", "H"),
                     default=["29", "58", "38.0", "N"], help="angolo NW lat (DMS)")
@@ -613,11 +852,11 @@ def main():
                     default=["31", "7", "55.4", "E"], help="angolo SE lon (DMS)")
     ap.add_argument("--pol", default="vv")
     ap.add_argument("--layers", type=int, default=12, help="numero di strati (>=12)")
-    ap.add_argument("--start", default="2026-01-01", help="data inizio ricerca YYYY-MM-DD")
+    ap.add_argument("--start", default="2025-01-01", help="data inizio ricerca YYYY-MM-DD")
     ap.add_argument("--end", default="2026-06-25", help="data fine ricerca YYYY-MM-DD")
     ap.add_argument("--max-search", type=int, default=40)
-    ap.add_argument("--stack", default=None, help="cartella TIFF scaricati")
-    ap.add_argument("--outdir", default=None, help="cartella output")
+    ap.add_argument("--stack", default='dep_tiff', help="cartella TIFF scaricati")
+    ap.add_argument("--outdir", default='Out_perm1', help="cartella output")
     ap.add_argument("--download", action="store_true", help="scarica davvero (servono credenziali CDSE)")
     ap.add_argument("--cdse-user", default=None,
                     help="username/email CDSE (altrimenti env CDSE_USER)")
@@ -629,6 +868,9 @@ def main():
     ap.add_argument("--dmax", type=float, default=0.06,
                     help="variazione di frequenza MASSIMA della banda densita' (step 6)")
     ap.add_argument("--no-pyramid", action="store_true", help="non sovrapporre la piramide al DEM")
+    ap.add_argument("--no-track-filter", action="store_true",
+                    help="step 3: NON filtrare le scene per track (tiene anche scene di "
+                         "relative orbit diversi, decorrelate -> quote peggiori)")
     ap.add_argument("--debug", action="store_true")
     a = ap.parse_args()
     DBG = a.debug
@@ -657,11 +899,14 @@ def main():
     if 1 in steps:
         prods = step1_cerca(aoi, a.start, a.end, a.max_search, a.pol, outdir)
     if 2 in steps:
-        # senza --download non si scaricano gli ~8 GB/prodotto: si riusa lo stack
-        step2_scarica(prods if a.download else [], a.layers, a.pol, stackdir,
-                      user=a.cdse_user, pwd=a.cdse_pass)
+        # i prodotti trovati dallo step 1 (che contengono le coordinate) vengono
+        # sempre passati allo step 2; il download vero (~8 GB/prodotto) avviene
+        # solo con --download e credenziali CDSE, altrimenti si riusa lo stack.
+        step2_scarica(prods, a.layers, a.pol, stackdir,
+                      user=a.cdse_user, pwd=a.cdse_pass, download=a.download)
     if 3 in steps:
-        step3_estrai_box(stackdir, a.pol, aoi, boxpath, fallback_box)
+        step3_estrai_box(stackdir, a.pol, aoi, boxpath, fallback_box,
+                         track_filter=not a.no_track_filter)
     elif not os.path.exists(boxpath) and os.path.exists(fallback_box):
         boxpath = fallback_box
 
