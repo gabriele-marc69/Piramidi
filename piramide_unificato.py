@@ -63,7 +63,7 @@ Esempio:
 Credenziali download (step 2), via variabili d'ambiente (MAI hardcoded nel codice):
   CDSE_USER / CDSE_PASS   (account gratuito su dataspace.copernicus.eu)
 """
-import os, sys, re, glob, json, time, zipfile, argparse, subprocess
+import os, sys, re, glob, json, time, zipfile, argparse, subprocess, socket
 import urllib.request, urllib.parse, urllib.error
 import numpy as np
 
@@ -81,15 +81,21 @@ MIN_VALID_PCT = 50.0   # step 3: copertura minima dell'AOI in un sub-swath per t
 
 # Box di default per piramide (DMS), presi dai due programmi ora unificati.
 # Passa esplicitamente --nw/--nw-lon/--se/--se-lon per un box custom.
+# base_m/h_m: geometria reale della piramide (base e altezza ATTUALE), usata per
+# l'overlay sul DEM e quindi per le "altezze reali" degli step 5-6. La lunghezza
+# della base e' anche il riferimento metrico interno usato nel paper Biondi-Malanga
+# (skill biondi-malanga-sar-tomography, sez. 5.19): sbagliarla falsa le quote.
 PRESETS = {
     "cheope": dict(
         nw=("29", "58", "48.0", "N"), nw_lon=("31", "7", "58.4", "E"),
         se=("29", "58", "41.0", "N"), se_lon=("31", "8", "07.7", "E"),
-        outdir_name="goal_out_Cheope"),
+        outdir_name="goal_out_Cheope",
+        base_m=230.3, h_m=138.7, label="Cheope (Khnum-Khufu)"),
     "kefren": dict(
         nw=("29", "58", "38.0", "N"), nw_lon=("31", "7", "45.4", "E"),
         se=("29", "58", "29.0", "N"), se_lon=("31", "7", "55.4", "E"),
-        outdir_name="goal_out_kefren"),
+        outdir_name="goal_out_kefren",
+        base_m=215.5, h_m=136.4, label="Chefren (Khafre)"),
 }
 
 
@@ -126,11 +132,29 @@ def step1_cerca(aoi, start, end, max_records, pol, outdir):
     dbg("query:", url)
     log(f"[1] ricerca SLC che contengono l'AOI "
         f"(lon {lonW:.5f}..{lonE:.5f}, lat {latS:.5f}..{latN:.5f}), {start}..{end}")
-    try:
-        with urllib.request.urlopen(urllib.request.Request(url), timeout=90) as r:
-            data = json.load(r)
-    except Exception as ex:
-        log(f"    ! ricerca catalogo fallita ({ex}); proseguo con i dati locali")
+    cache = os.path.join(outdir, "prodotti_trovati.json")
+    data = None
+    for giro in (1, 2):              # 2 giri: il secondo dopo un'attesa-rete
+        try:
+            with urllib.request.urlopen(urllib.request.Request(url), timeout=90) as r:
+                data = json.load(r)
+            break
+        except Exception as ex:
+            log(f"    ! ricerca catalogo fallita ({ex})")
+            if giro == 1 and not _rete_ok():
+                if not _attendi_rete():
+                    break
+            else:
+                break
+    if data is None:
+        # fallback: elenco prodotti salvato da un run precedente (stesse coordinate)
+        if os.path.exists(cache):
+            with open(cache, encoding="utf-8") as f:
+                prods = json.load(f)
+            log(f"[1] rete/catalogo indisponibile: riuso l'elenco in cache "
+                f"({len(prods)} prodotti da {cache})")
+            return prods
+        log("    ! nessuna cache prodotti disponibile; proseguo con i dati locali")
         return []
     prods = [{"Name": f["Name"], "Id": f["Id"],
               "ContentLength": f.get("ContentLength", 0),
@@ -141,9 +165,9 @@ def step1_cerca(aoi, start, end, max_records, pol, outdir):
     for p in prods[:20]:
         log(f"      - {p['Name']}  ({p['ContentLength']/1e9:.1f} GB)")
     os.makedirs(outdir, exist_ok=True)
-    with open(os.path.join(outdir, "prodotti_trovati.json"), "w", encoding="utf-8") as f:
+    with open(cache, "w", encoding="utf-8") as f:
         json.dump(prods, f, indent=2)
-    log(f"    elenco salvato in {os.path.join(outdir, 'prodotti_trovati.json')}")
+    log(f"    elenco salvato in {cache}")
     return prods
 
 
@@ -154,6 +178,33 @@ def _cdse_token(user, pwd):
                                    "username": user, "password": pwd}).encode()
     with urllib.request.urlopen(urllib.request.Request(url, data=body), timeout=60) as r:
         return json.load(r)["access_token"]
+
+
+def _rete_ok():
+    """True se il DNS risolve il nodo CDSE (test rapido di connettivita')."""
+    try:
+        socket.getaddrinfo("catalogue.dataspace.copernicus.eu", 443)
+        return True
+    except OSError:
+        return False
+
+
+def _attendi_rete(max_wait=7200, check_every=30):
+    """Se la rete e' giu', aspetta che torni (fino a max_wait secondi) invece di
+    bruciare i tentativi: con download multi-ora una connessione che 'flappa'
+    non deve far abbandonare l'intera coda di prodotti."""
+    if _rete_ok():
+        return True
+    log(f"    ! rete assente: attendo che torni (controllo ogni {check_every}s, "
+        f"max {max_wait//60} min)...")
+    t0 = time.time()
+    while time.time() - t0 < max_wait:
+        time.sleep(check_every)
+        if _rete_ok():
+            log(f"    rete tornata dopo {time.time()-t0:.0f}s: riprendo")
+            return True
+    log(f"    ! rete ancora assente dopo {max_wait//60} min: rinuncio")
+    return False
 
 
 class _AuthRedirect(urllib.request.HTTPRedirectHandler):
@@ -171,7 +222,11 @@ class _AuthRedirect(urllib.request.HTTPRedirectHandler):
 _CDSE_OPENER = urllib.request.build_opener(_AuthRedirect())
 
 
-def _scarica_ripristinabile(url, dest, get_token, expected=0, n_try=6):
+def _scarica_ripristinabile(url, dest, get_token, expected=0, n_try=60):
+    # n_try alto di proposito: ogni tentativo RIPRENDE dal byte gia' scaricato
+    # (header Range), quindi con connessioni instabili che cadono ogni pochi
+    # minuti servono molti brevi tentativi per completare un file da ~8 GB;
+    # un tentativo non costa nulla se non aggiunge progresso.
     """Scarica `url` in `dest` riprendendo da dove si era interrotto (fusione
     del download ripristinabile di Cheope con l'opener che preserva
     l'Authorization sui redirect di Kefren, cosi' da avere sia la resilienza
@@ -189,12 +244,14 @@ def _scarica_ripristinabile(url, dest, get_token, expected=0, n_try=6):
         have = os.path.getsize(part) if os.path.exists(part) else 0
         if expected and have >= expected:        # gia' completo da un giro precedente
             break
-        headers = {"Authorization": f"Bearer {get_token()}"}
-        if have:
-            headers["Range"] = f"bytes={have}-"
-            log(f"    riprendo da {have/1e9:.2f} GB"
-                f"{f' / {expected/1e9:.1f} GB' if expected else ''} (tentativo {att}/{n_try})")
         try:
+            # token DENTRO il try: anche un errore di rete nel login deve essere
+            # ritentato qui (prima faceva saltare l'intero prodotto)
+            headers = {"Authorization": f"Bearer {get_token()}"}
+            if have:
+                headers["Range"] = f"bytes={have}-"
+                log(f"    riprendo da {have/1e9:.2f} GB"
+                    f"{f' / {expected/1e9:.1f} GB' if expected else ''} (tentativo {att}/{n_try})")
             req = urllib.request.Request(url, headers=headers)
             # _CDSE_OPENER conserva l'Authorization sul redirect verso il nodo download
             with _CDSE_OPENER.open(req, timeout=1800) as r:
@@ -216,6 +273,10 @@ def _scarica_ripristinabile(url, dest, get_token, expected=0, n_try=6):
             log(f"    ! interrotto ({ex}); ritento tra {wait}s "
                 f"({att}/{n_try}, {os.path.getsize(part)/1e9 if os.path.exists(part) else 0:.2f} GB salvati)")
             time.sleep(wait)
+            # se e' la rete a mancare, aspetta che torni PRIMA di consumare
+            # il prossimo tentativo (connessioni instabili/lunghi blackout)
+            if not _attendi_rete():
+                return False
     else:
         log(f"    ! download non completato dopo {n_try} tentativi"); return False
     if expected and os.path.getsize(part) < expected:
@@ -224,24 +285,64 @@ def _scarica_ripristinabile(url, dest, get_token, expected=0, n_try=6):
     return True
 
 
+def _dt_scena(nome):
+    """Chiave-scena (YYYYMMDDtHHMM, senza secondi) dal nome SAFE/TIFF. Un SAFE
+    contiene 3 sub-swath -> 3 TIFF della stessa scena i cui timestamp differiscono
+    di 1-2 SECONDI (iw1/iw2/iw3): troncando ai minuti i 3 TIFF collassano su una
+    sola scena, mentre track diversi (ore/minuti diversi) restano distinti."""
+    m = re.search(r"(\d{8}t\d{4})", nome.lower())
+    return m.group(1) if m else nome
+
+
 def step2_scarica(prods, n_want, pol, stackdir, user=None, pwd=None, download=False):
     """Scarica i prodotti e ne estrae i measurement TIFF (+ annotation) della
-    polarizzazione richiesta nello stack locale. Credenziali CDSE: dai parametri
-    --cdse-user/--cdse-pass oppure dalle variabili d'ambiente CDSE_USER/CDSE_PASS
-    (mai hardcoded qui). Se mancano le credenziali (o la lista e' vuota), salta
-    e usa quel che c'e'."""
+    polarizzazione richiesta nello stack locale. Il conteggio verso n_want e' in
+    SCENE distinte (datetime di acquisizione), non in TIFF (un SAFE = 3 TIFF della
+    stessa scena). I prodotti del track dominante (stessa ora del giorno) vengono
+    scaricati per primi: gli step 4-6 usano solo scene dello stesso track (cfr.
+    filtro dello step 3), quindi date di track diversi non aggiungerebbero coppie.
+    Credenziali CDSE: dai parametri --cdse-user/--cdse-pass oppure dalle variabili
+    d'ambiente CDSE_USER/CDSE_PASS (mai hardcoded qui). Se mancano le credenziali
+    (o la lista e' vuota), salta e usa quel che c'e'."""
     os.makedirs(stackdir, exist_ok=True)
-    have = sorted(glob.glob(os.path.join(stackdir, f"*slc-{pol}-*.tiff")))
+    # riusa solo TIFF plausibilmente integri (un measurement IW pesa ~1 GB: file
+    # molto piccoli = estrazione interrotta a meta' -> da rifare)
+    MIN_TIFF = 50_000_000
+    have_all = sorted(glob.glob(os.path.join(stackdir, f"*slc-{pol}-*.tiff")))
+    have = [h for h in have_all if os.path.getsize(h) >= MIN_TIFF]
+    for h in have_all:
+        if h not in have:
+            log(f"[2] {os.path.basename(h)}: troncato "
+                f"({os.path.getsize(h)/1e6:.0f} MB), lo rimuovo e riestraggo")
+            os.remove(h)
     if have:
-        log(f"[2] gia' presenti {len(have)} TIFF '{pol}' in {stackdir} (riuso)")
+        log(f"[2] gia' presenti {len(have)} TIFF '{pol}' in {stackdir} (riuso: "
+            f"{len({_dt_scena(os.path.basename(h)) for h in have})} scene)")
     user = user or os.environ.get("CDSE_USER")
     pwd = pwd or os.environ.get("CDSE_PASS")
     if not prods:
         log("[2] nessun prodotto dalla ricerca: uso i TIFF gia' presenti nello stack")
         return have
-    # i prodotti trovati dallo step 1 CONTENGONO le coordinate richieste
+    # i prodotti trovati dallo step 1 CONTENGONO le coordinate richieste.
+    # Riordina per track dominante (cluster sull'ora del giorno, come il filtro
+    # dello step 3): prima le date del track piu' numeroso, poi gli altri.
+    secs = [_acq_secs(p["Name"]) or -1 for p in prods]
+    clusters = []
+    for i, s in enumerate(secs):
+        for cl in clusters:
+            if abs(s - secs[cl[0]]) <= 20:
+                cl.append(i); break
+        else:
+            clusters.append([i])
+    clusters.sort(key=len, reverse=True)
+    ordine = [i for cl in clusters for i in cl]
+    if ordine != sorted(ordine):
+        log(f"[2] {len(clusters)} track distinti tra i prodotti: scarico prima le "
+            f"{len(clusters[0])} date del track dominante (le scene di track diversi "
+            "verrebbero comunque escluse dal filtro dello step 3)")
+    prods = [prods[i] for i in ordine]
     log(f"[2] {len(prods)} prodotti dalla ricerca contengono le coordinate "
-        f"(ne servono >={n_want})")
+        f"(ne servono >={n_want} scene)")
     for p in prods[:n_want]:
         log(f"      - {p['Name']}  ({p.get('ContentLength', 0)/1e9:.1f} GB)")
     if not download:
@@ -264,48 +365,75 @@ def step2_scarica(prods, n_want, pol, stackdir, user=None, pwd=None, download=Fa
 
     got = list(have)
     for p in prods:
-        if len([g for g in got]) >= n_want:
+        # n_want conta SCENE distinte (datetime), non TIFF: 1 SAFE = 3 TIFF iw1-3
+        scene = {_dt_scena(os.path.basename(g)) for g in got}
+        if len(scene) >= n_want:
             break
+        if _dt_scena(p["Name"]) in scene:
+            log(f"[2] {p['Name']}: scena gia' nello stack, salto"); continue
         safe_zip = os.path.join(stackdir, p["Name"].replace(".SAFE", "") + ".zip")
         url = (f"https://catalogue.dataspace.copernicus.eu/odata/v1/"
                f"Products({p['Id']})/$value")
-        log(f"[2] scarico {p['Name']} ({p['ContentLength']/1e9:.1f} GB) ...")
-        try:
-            ok = _scarica_ripristinabile(url, safe_zip, get_token,
-                                         expected=int(p.get("ContentLength", 0) or 0))
-        except urllib.error.HTTPError as ex:
-            ok = False
-            if ex.code == 401:
-                log("    ! 401 Unauthorized: credenziali CDSE errate/non confermate "
-                    "(verifica l'account su dataspace.copernicus.eu) o token scaduto")
-            else:
-                log(f"    ! download fallito (HTTP {ex.code}); continuo")
-        except urllib.error.URLError as ex:
-            ok = False
-            log(f"    ! download fallito (rete: {ex.reason}); controlla la connessione "
-                "e riprova")
+        expected = int(p.get("ContentLength", 0) or 0)
+        zip_completo = (expected and os.path.exists(safe_zip)
+                        and os.path.getsize(safe_zip) >= expected)
+        ok = False
+        for giro in (1, 2):          # 2 giri: il secondo dopo un'attesa-rete
+            try:
+                if zip_completo:
+                    log(f"[2] {p['Name']}: zip gia' scaricato per intero, riuso "
+                        "(salto il download, riestraggo)")
+                    ok = True
+                else:
+                    log(f"[2] scarico {p['Name']} ({expected/1e9:.1f} GB) ...")
+                    ok = _scarica_ripristinabile(url, safe_zip, get_token,
+                                                 expected=expected)
+            except urllib.error.HTTPError as ex:
+                if ex.code == 401:
+                    log("    ! 401 Unauthorized: credenziali CDSE errate/non "
+                        "confermate (verifica l'account su dataspace.copernicus.eu) "
+                        "o token scaduto")
+                else:
+                    log(f"    ! download fallito (HTTP {ex.code})")
+            except urllib.error.URLError as ex:
+                log(f"    ! download fallito (rete: {ex.reason})")
+            if ok or _rete_ok():
+                break                # riuscito, o fallito per un motivo non di rete
+            if not _attendi_rete():  # rete giu': aspetta che torni e riprova
+                break
         if not ok:
             log("    ! download fallito; continuo"); continue
-        # estrai dal SAFE i measurement tiff + annotation della polarizzazione
+        # estrai dal SAFE i measurement tiff + annotation della polarizzazione.
+        # Scrittura ATOMICA (tmp + rename): un'interruzione a meta' estrazione non
+        # deve lasciare nello stack file troncati indistinguibili da quelli buoni.
         try:
             with zipfile.ZipFile(safe_zip) as z:
                 for nm in z.namelist():
                     low = nm.lower()
+                    dst = None
                     if f"-{pol}-" in low and low.endswith(".tiff") and "/measurement/" in low:
                         dst = os.path.join(stackdir, os.path.basename(low))
-                        with z.open(nm) as zi, open(dst, "wb") as fo:
-                            fo.write(zi.read())
-                        got.append(dst)
-                    if f"-{pol}-" in low and low.endswith(".xml") and "/annotation/" in low \
+                    elif f"-{pol}-" in low and low.endswith(".xml") and "/annotation/" in low \
                             and "/calibration/" not in low:
                         dst = os.path.join(stackdir, os.path.basename(low).replace(
                             ".xml", ".annotation.xml"))
-                        with z.open(nm) as zi, open(dst, "wb") as fo:
-                            fo.write(zi.read())
+                    if dst is None:
+                        continue
+                    tmp = dst + ".tmp"
+                    with z.open(nm) as zi, open(tmp, "wb") as fo:
+                        while True:
+                            chunk = zi.read(1 << 22)
+                            if not chunk:
+                                break
+                            fo.write(chunk)
+                    os.replace(tmp, dst)
+                    if dst.endswith(".tiff"):
+                        got.append(dst)
             os.remove(safe_zip)
         except Exception as ex:
             log(f"    ! estrazione SAFE fallita ({ex})")
-    log(f"[2] TIFF '{pol}' disponibili nello stack: {len(got)}")
+    log(f"[2] TIFF '{pol}' disponibili nello stack: {len(got)} "
+        f"({len({_dt_scena(os.path.basename(g)) for g in got})} scene distinte)")
     return got
 
 
@@ -583,10 +711,12 @@ def step4_array_12(boxpath, n_layers, outdir):
 
 
 # ----------------------------------------------------------- DEM (altezze reali)
-def _fetch_dem(aoi, ny, nx, outdir, pyramid):
+def _fetch_dem(aoi, ny, nx, outdir, pyr_geom):
     """Quota reale del terreno (DEM Copernicus via Open-Meteo) sulla griglia
-    pixel (ny,nx). Opzionale overlay della geometria della piramide di Chefren
-    se l'AOI e' centrata sul plateau di Giza."""
+    pixel (ny,nx). Opzionale overlay della geometria della piramide selezionata
+    (pyr_geom = dict(base_m, h_m, label) dal PRESET, None = nessun overlay):
+    ogni piramide ha base/altezza proprie, usarle giuste e' essenziale perche'
+    la base e' il riferimento metrico interno (paper Biondi-Malanga, sez. 5.19)."""
     cache = os.path.join(outdir, "dem.npz")
     lonW, lonE, latS, latN = aoi
     j = np.arange(nx); i = np.arange(ny)
@@ -630,22 +760,25 @@ def _fetch_dem(aoi, ny, nx, outdir, pyramid):
     # salva SEMPRE il DEM nudo in cache (l'overlay piramide e' ricalcolato ogni volta)
     np.savez_compressed(cache, z0=z0, lon=lon, lat=lat)
 
-    if pyramid:
-        # geometria reale piramide di Chefren (base 215.5 m, altezza attuale 136.4 m)
+    if pyr_geom:
+        # geometria reale della piramide selezionata (base e altezza ATTUALE dal
+        # PRESET: Cheope 230.3/138.7 m, Chefren 215.5/136.4 m)
         latm = np.radians((latN + latS) / 2)
         Lx = (lonE - lonW) * 111320 * np.cos(latm)
         Ly = (latN - latS) * 110540
         x_px = np.linspace(0, Lx, nx); y_px = np.linspace(0, Ly, ny)
-        H_PYR, BASE = 136.4, 215.5; half = BASE / 2.0
+        H_PYR = float(pyr_geom["h_m"]); BASE = float(pyr_geom["base_m"])
+        half = BASE / 2.0
         XX, YY = np.meshgrid(x_px, y_px)
         cheb = np.maximum(np.abs(XX - Lx / 2), np.abs(YY - Ly / 2))
         z0 = z0 + np.clip(H_PYR * (1.0 - cheb / half), 0.0, None)
-        log(f"[DEM] overlay piramide Chefren -> apice {z0.max():.0f} m s.l.m.")
+        log(f"[DEM] overlay piramide {pyr_geom['label']} (base {BASE:.1f} m, "
+            f"h {H_PYR:.1f} m) -> apice {z0.max():.0f} m s.l.m.")
     return z0
 
 
 # ===================================================================== STEP 5
-def step5_grafico_onde(disp, phi, x, y, aoi, outdir, pyramid,
+def step5_grafico_onde(disp, phi, x, y, aoi, outdir, pyr_geom,
                        NZ=256, ZTOP=210.0, ZBOT=-200.0, STEP_X=4, STEP_Y=2,
                        WIGGLE=14.0):
     """Grafico 3D dell'array: i numeri dei n_layers strati DInSAR di ogni pixel
@@ -664,8 +797,14 @@ def step5_grafico_onde(disp, phi, x, y, aoi, outdir, pyramid,
     Lx = (aoi[1] - aoi[0]) * 111320 * np.cos(latm)
     Ly = (aoi[3] - aoi[2]) * 110540
     x_m = np.linspace(0, Lx, nx); y_m = np.linspace(0, Ly, ny)
-    z0 = _fetch_dem(aoi, ny, nx, outdir, pyramid)
+    z0 = _fetch_dem(aoi, ny, nx, outdir, pyr_geom)
 
+    # ZTOP adattivo: con l'overlay piramide l'apice (quota plateau + h piramide,
+    # es. Cheope ~200-215 m s.l.m.) puo' superare il default e verrebbe tagliato
+    if float(z0.max()) + 5.0 > ZTOP:
+        ZTOP = float(np.ceil(z0.max())) + 5.0
+        log(f"[5] ZTOP alzato a {ZTOP:.0f} m s.l.m. per non tagliare l'apice "
+            f"({z0.max():.0f} m)")
     ZD = ZTOP - ZBOT
     z = np.linspace(0, ZD, NZ); nf = NZ // 2 + 1
     coeff = (np.abs(disp) * np.exp(1j * phi)).astype(complex)   # (nS, ny, nx)
@@ -1032,7 +1171,17 @@ def main():
     fallback_box = os.path.join(base_dir, "box.npz")
     boxpath = os.path.join(outdir, "box.npz")
     os.makedirs(outdir, exist_ok=True)
-    pyramid = not a.no_pyramid
+    # geometria per l'overlay piramide sul DEM (step 5-6): quella del preset
+    # scelto (ogni piramide ha base/altezza proprie). Con un box custom senza
+    # --pyramid non c'e' geometria nota -> nessun overlay (solo DEM).
+    pyr_geom = None
+    if not a.no_pyramid:
+        if a.pyramid:
+            _p = PRESETS[a.pyramid]
+            pyr_geom = dict(base_m=_p["base_m"], h_m=_p["h_m"], label=_p["label"])
+        else:
+            log("(box custom senza --pyramid: nessun overlay piramide sul DEM; "
+                "usa --pyramid cheope|kefren per l'overlay con la geometria giusta)")
     steps = parse_steps(a.steps)
 
     lat_nw = dms2dec(*a.nw[:3], a.nw[3]); lon_nw = dms2dec(*a.nw_lon[:3], a.nw_lon[3])
@@ -1068,7 +1217,7 @@ def main():
         disp, phi, x, y, coh = step4_array_12(boxpath, a.layers, outdir)
         if steps & {5, 6}:
             (w, z, x_m, y_m, z0, Lx, Ly, ZD, ZTOP, ZBOT) = \
-                step5_grafico_onde(disp, phi, x, y, aoi, outdir, pyramid)
+                step5_grafico_onde(disp, phi, x, y, aoi, outdir, pyr_geom)
             if 6 in steps:
                 step6_variazioni(w, z, x_m, y_m, z0, Lx, Ly, ZD, ZTOP, ZBOT, outdir,
                                  DMIN=a.dmin, DMAX=a.dmax)

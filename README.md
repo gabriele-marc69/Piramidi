@@ -34,18 +34,31 @@ export CDSE_USER="tua-email@example.com"
 export CDSE_PASS="la-tua-password"
 
 # 4. Esegui la pipeline completa (ricerca + download + 6 step).
-#    C'è una cartella per piramide, ciascuna con i box di default già impostati:
-python goal_out_Cheope/piramide_unificato.py --download   # Cheope (Khufu)
-python goal_out_kefren/piramide_unificato.py --download   # Kefren (Khafre)
+#    UN SOLO script per entrambe le piramidi: --pyramid sceglie il box di default
+#    (cheope|kefren) e la cartella di output (goal_out_Cheope/ o goal_out_kefren/).
+python piramide_unificato.py --pyramid cheope --download   # Cheope (Khufu)
+python piramide_unificato.py --pyramid kefren --download   # Kefren (Khafre)
 
 # Solo elaborazione su dati già presenti nello stack_slc/ della cartella (niente download):
-python goal_out_kefren/piramide_unificato.py --steps 3-6
+python piramide_unificato.py --pyramid kefren --steps 3-6
+
+# Tomografia Doppler "vera" del paper (steering matrix + h(z)=A^H*Y), in aggiunta
+# agli step scelti — vedi la nota metodologica in cima a piramide_unificato.py:
+python piramide_unificato.py --pyramid kefren --steps 3 --vera-tomografia
 ```
 
 Output (grafici 3D `.html`/`.png`, array `.npz`) finiscono nella sottocartella di output
 della rispettiva piramide (`unificato/`, non versionata).
-Per AOI, date e polarizzazione personalizzate vedi
+Per AOI, date e polarizzazione personalizzate (box custom) passa esplicitamente
+`--nw/--nw-lon/--se/--se-lon` al posto di `--pyramid`; vedi
 [Scaricare i dati Sentinel-1](#scaricare-i-dati-sentinel-1).
+
+> ⚠️ **Nota sul metodo**: gli step 5-6 (`piramide_unificato.py`) sono un'analisi
+> esplorativa (Fourier stirata + frequenza istantanea di Hilbert) ispirata al lessico
+> di Biondi & Malanga ma **non** implementano la loro tomografia Doppler a
+> sub-aperture. Per la tomografia coerente col paper (steering matrix, inversione
+> `h(z)=A^H*Y`, validata su un modello sintetico) usa `--vera-tomografia` oppure
+> `skills/sar-doppler-tomography/scripts/tomographic_images.py` direttamente.
 
 ## Visualizzazioni interattive
 
@@ -62,21 +75,24 @@ serve come pagina:
 
 ```
 .
+├── piramide_unificato.py         # UNICO script per entrambe le piramidi (--pyramid cheope|kefren)
 ├── skills/                       # Skill riusabili (formato anthropics/skills)
 │   ├── sentinel1-slc-reader/     # lettura SLC + geolocalizzazione box via GCP → .npz
-│   ├── sar-doppler-tomography/   # sub-aperture Doppler + inversione tomografica
+│   ├── sar-doppler-tomography/   # sub-aperture Doppler + inversione tomografica (metodo del paper)
 │   └── sar-dinsar-microdisplacement/  # micro-spostamenti LOS da fase interferometrica
-├── goal_out_Cheope/              # pipeline + output per la piramide di Cheope (Khufu)
-│   ├── goal_pipeline.py          # pipeline a 6 step (vedi skills/goal.txt)
-│   ├── piramide_unificato.py     # pipeline unificata (box di default = Cheope)
-│   ├── trasformata_fourier.py    # parametrizzazione Fourier degli strati
-│   ├── tomografia_verticale.py   # sezioni verticali
-│   └── ...                       # grafici 3D, picchi, variazioni di frequenza
-├── goal_out_kefren/              # stessa pipeline, box di default = Kefren (Khafre)
+├── goal_out_Cheope/              # SOLO output per la piramide di Cheope (Khufu)
+│   └── ...                       # box.npz, stack_slc/, unificato/ (non versionati)
+├── goal_out_kefren/              # SOLO output per la piramide di Kefren (Khafre)
 │   └── ...                       # (output .npz/.png/.html non versionati)
 ├── requirements.txt
 └── .gitignore
 ```
+
+`piramide_unificato.py` sostituisce le due copie divergenti che vivevano prima dentro
+`goal_out_Cheope/` e `goal_out_kefren/`, oltre agli script standalone superati
+(`goal_pipeline.py`, `forma_donda_rettangolo.py`, `tomografia_verticale.py`,
+`trasformata_fourier.py`, `grafico_*.py`, `picchi_onde.py`, `variazioni_onde.py`,
+`fetch_dem.py`) che erano duplicati identici in entrambe le cartelle.
 
 ## Pipeline (6 step)
 
