@@ -7,6 +7,7 @@
 stack_slc/
 goal_out/s1d/
 goal_out/stack_slc/
+alta_risoluzione_out/
 
 # Array e dataset numerici
 *.npz
@@ -66,3 +67,6 @@ goal_out/unificato/
 rettangolo/
 unificato/
 s1d/
+.cdse.env
+download.log
+download.err.log
