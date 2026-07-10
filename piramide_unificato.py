@@ -3,38 +3,68 @@
 """
 piramide_unificato.py
 =====================
-UN SOLO programma che esegue l'intera catena del goal, dai 6 step separati
-(extract_box + goal_pipeline + forma_donda + tomografia_verticale +
-variazioni_onde + fetch_dem) uniti in un'unica pipeline guidata dalle coordinate.
+UN SOLO programma (fusione di goal_out_Cheope/piramide_unificato.py e
+goal_out_kefren/piramide_unificato.py, che erano divergenti) che esegue l'intera
+catena del goal, dai 6 step separati (extract_box + goal_pipeline + forma_donda +
+tomografia_verticale + variazioni_onde + fetch_dem) uniti in un'unica pipeline
+guidata dalle coordinate, con selezione della piramide via --pyramid.
 
 Step (allineati al goal):
   1) cerca i file .tiff (prodotti Sentinel-1 SLC) che CONTENGONO le coordinate
      passate al programma -> almeno 12 (catalogo Copernicus Data Space, OData).
   2) scarica i .tiff dei prodotti trovati (estrae dal pacchetto SAFE il/i
-     measurement TIFF della polarizzazione scelta + annotation.xml).
+     measurement TIFF della polarizzazione scelta + annotation.xml), con
+     download ripristinabile (riprende da dove interrotto) e token CDSE
+     rinnovato ad ogni tentativo.
   3) estrae l'AREA delle coordinate da ogni .tiff via i GCP del prodotto ->
-     stack complesso co-registrato (n_scene, azimuth, range) -> box.npz.
+     stack complesso co-registrato (n_scene, azimuth, range) -> box.npz,
+     verificando lo sfasamento tra le scene e tenendo solo il track dominante.
   4) estrae la COMPONENTE VERTICALE dello spostamento dei singoli pixel
-     (DInSAR LOS -> verticale) per le aree estratte -> array a 12 strati
-     (n_strati, ny, nx).
-  5) genera il grafico 3D dell'array: i 12 numeri di ogni pixel sono i
+     (DInSAR LOS -> verticale) per le aree estratte -> array a N strati
+     (n_strati, ny, nx). Questo step è un'interferometria DInSAR classica
+     (coerente con la skill sar-dinsar-microdisplacement), NON con la
+     tomografia Doppler del paper.
+  5) genera il grafico 3D dell'array: i numeri di ogni pixel sono i
      coefficienti armonici di una forma d'onda sviluppata in profondita'
      (anti-trasformata di Fourier) -> superficie reale + "molle" 3D.
-  6) estrae i punti dove le forme d'onda variano in frequenza (=> densita',
-     Biondi-Malanga) e li disegna in 3D tenendo conto delle ALTEZZE REALI dei
-     punti rispetto al livello 0 (DEM Copernicus + geometria del bersaglio).
+  6) estrae i punti dove le forme d'onda variano in frequenza (=> densita')
+     e li disegna in 3D tenendo conto delle ALTEZZE REALI dei punti rispetto
+     al livello 0 (DEM Copernicus + geometria del bersaglio).
+
+*** NOTA METODOLOGICA IMPORTANTE (vedi anche skill biondi-malanga-sar-tomography) ***
+Gli step 5-6 sono un'analisi ESPLORATIVA ispirata al lessico di Biondi & Malanga
+(Remote Sens. 2022, 14, 5231) ma NON implementano il loro metodo di tomografia
+Doppler a sub-aperture. Nel paper la profondita' viene ricostruita da un numero
+di vettore d'onda verticale Kz = 4*pi*B_perp / (lambda_sonic * r * sin(theta))
+(baseline ortogonali sintetizzate da sub-aperture Doppler di UNA SOLA immagine
+SLC) e da un'inversione a filtro adattato h(z) = A^H * Y (steering matrix),
+con risoluzione tomografica delta_z = lambda_sonic * R / (2*A). Gli step 5-6 di
+QUESTO script, invece, trattano gli N strati DInSAR (interferogrammi tra COPPIE
+di acquisizioni in date diverse) come se fossero i coefficienti spettrali di
+una serie di Fourier stirata su un range di profondita' scelto ARBITRARIAMENTE
+(non derivato dalla geometria SAR), poi ne misura la frequenza istantanea
+(Hilbert) per proporre punti di "variazione di densita'". E' un'estensione
+originale, non la tomografia del paper: usarla per ipotesi, non come misura
+di profondita' fisica validata.
+
+Per la tomografia Doppler COERENTE con il paper (steering matrix + inversione
+h(z)=A^H*Y, gia' validata su un modello sintetico in
+skills/sar-doppler-tomography/scripts/sar_tomo.py) usa il flag
+--vera-tomografia: richiama scripts/tomographic_images.py sullo stesso stack
+Sentinel-1, producendo le sezioni tomografiche in stile pubblicazione (B-scan,
+slice orizzontali, mappa di quota) con l'inversione reale del paper, avvisando
+sull'altezza di ambiguita' z_amb oltre la quale le profondita' vanno in alias.
 
 Esempio:
-  python piramide_unificato.py --nw 29 58 38.0 N 31 7 45.4 E \  
-                               --se 29 58 29.0 N 31 7 55.4 E \
-                               --download            # richiede credenziali CDSE
-  python piramide_unificato.py --steps 3-6           # solo elaborazione (dati locali)
+  python piramide_unificato.py --pyramid kefren --download   # richiede credenziali CDSE
+  python piramide_unificato.py --pyramid cheope --steps 3-6  # solo elaborazione (dati locali)
+  python piramide_unificato.py --pyramid kefren --vera-tomografia   # + tomografia Doppler vera
 
-Credenziali download (step 2), via variabili d'ambiente:
+Credenziali download (step 2), via variabili d'ambiente (MAI hardcoded nel codice):
   CDSE_USER / CDSE_PASS   (account gratuito su dataspace.copernicus.eu)
 """
-import os, sys, re, glob, json, time, zipfile, argparse
-import urllib.request, urllib.parse
+import os, sys, re, glob, json, time, zipfile, argparse, subprocess
+import urllib.request, urllib.parse, urllib.error
 import numpy as np
 
 # matplotlib/scipy/plotly importati lazy negli step che li usano, cosi' gli step
@@ -47,6 +77,20 @@ except Exception:
 
 C = 299_792_458.0
 DBG = False
+MIN_VALID_PCT = 50.0   # step 3: copertura minima dell'AOI in un sub-swath per tenerlo
+
+# Box di default per piramide (DMS), presi dai due programmi ora unificati.
+# Passa esplicitamente --nw/--nw-lon/--se/--se-lon per un box custom.
+PRESETS = {
+    "cheope": dict(
+        nw=("29", "58", "48.0", "N"), nw_lon=("31", "7", "58.4", "E"),
+        se=("29", "58", "41.0", "N"), se_lon=("31", "8", "07.7", "E"),
+        outdir_name="goal_out_Cheope"),
+    "kefren": dict(
+        nw=("29", "58", "38.0", "N"), nw_lon=("31", "7", "45.4", "E"),
+        se=("29", "58", "29.0", "N"), se_lon=("31", "7", "55.4", "E"),
+        outdir_name="goal_out_kefren"),
+}
 
 
 def log(*a):
@@ -112,8 +156,26 @@ def _cdse_token(user, pwd):
         return json.load(r)["access_token"]
 
 
+class _AuthRedirect(urllib.request.HTTPRedirectHandler):
+    """Conserva l'header Authorization quando CDSE reindirizza dal catalogo al nodo
+    di download: urllib di default lo rimuove sui redirect cross-host -> HTTP 401."""
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        new = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if new is not None:
+            auth = req.get_header("Authorization")
+            if auth:
+                new.add_unredirected_header("Authorization", auth)
+        return new
+
+
+_CDSE_OPENER = urllib.request.build_opener(_AuthRedirect())
+
+
 def _scarica_ripristinabile(url, dest, get_token, expected=0, n_try=6):
-    """Scarica `url` in `dest` riprendendo da dove si era interrotto.
+    """Scarica `url` in `dest` riprendendo da dove si era interrotto (fusione
+    del download ripristinabile di Cheope con l'opener che preserva
+    l'Authorization sui redirect di Kefren, cosi' da avere sia la resilienza
+    sia il fix del 401).
 
     Il file viene scritto in `dest + '.part'` in append: a ogni tentativo si
     legge la dimensione gia' scaricata e si chiede al server solo il resto con
@@ -134,8 +196,8 @@ def _scarica_ripristinabile(url, dest, get_token, expected=0, n_try=6):
                 f"{f' / {expected/1e9:.1f} GB' if expected else ''} (tentativo {att}/{n_try})")
         try:
             req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=1800) as r:
-                # se il server ignora il Range (200 invece di 206) si riparte da capo
+            # _CDSE_OPENER conserva l'Authorization sul redirect verso il nodo download
+            with _CDSE_OPENER.open(req, timeout=1800) as r:
                 mode = "ab" if (have and r.status == 206) else "wb"
                 if mode == "wb":
                     have = 0
@@ -162,11 +224,12 @@ def _scarica_ripristinabile(url, dest, get_token, expected=0, n_try=6):
     return True
 
 
-def step2_scarica(prods, n_want, pol, stackdir, user=None, pwd=None):
+def step2_scarica(prods, n_want, pol, stackdir, user=None, pwd=None, download=False):
     """Scarica i prodotti e ne estrae i measurement TIFF (+ annotation) della
     polarizzazione richiesta nello stack locale. Credenziali CDSE: dai parametri
-    --cdse-user/--cdse-pass oppure dalle variabili d'ambiente CDSE_USER/CDSE_PASS.
-    Se mancano le credenziali (o la lista e' vuota), salta e usa quel che c'e'."""
+    --cdse-user/--cdse-pass oppure dalle variabili d'ambiente CDSE_USER/CDSE_PASS
+    (mai hardcoded qui). Se mancano le credenziali (o la lista e' vuota), salta
+    e usa quel che c'e'."""
     os.makedirs(stackdir, exist_ok=True)
     have = sorted(glob.glob(os.path.join(stackdir, f"*slc-{pol}-*.tiff")))
     if have:
@@ -174,7 +237,19 @@ def step2_scarica(prods, n_want, pol, stackdir, user=None, pwd=None):
     user = user or os.environ.get("CDSE_USER")
     pwd = pwd or os.environ.get("CDSE_PASS")
     if not prods:
-        log("[2] nessun prodotto dalla ricerca: salto il download")
+        log("[2] nessun prodotto dalla ricerca: uso i TIFF gia' presenti nello stack")
+        return have
+    # i prodotti trovati dallo step 1 CONTENGONO le coordinate richieste
+    log(f"[2] {len(prods)} prodotti dalla ricerca contengono le coordinate "
+        f"(ne servono >={n_want})")
+    for p in prods[:n_want]:
+        log(f"      - {p['Name']}  ({p.get('ContentLength', 0)/1e9:.1f} GB)")
+    if not download:
+        log("[2] download non richiesto (manca --download): uso lo stack locale.")
+        log(f"    -> i SAFE pesano ~8 GB l'uno. Per scaricare davvero i {len(prods)} "
+            "prodotti trovati aggiungi")
+        log("       --download  con  --cdse-user <user> --cdse-pass <pass>  "
+            "(o le env CDSE_USER/CDSE_PASS)")
         return have
     if not (user and pwd):
         log("[2] credenziali CDSE assenti: salto il download.")
@@ -195,8 +270,21 @@ def step2_scarica(prods, n_want, pol, stackdir, user=None, pwd=None):
         url = (f"https://catalogue.dataspace.copernicus.eu/odata/v1/"
                f"Products({p['Id']})/$value")
         log(f"[2] scarico {p['Name']} ({p['ContentLength']/1e9:.1f} GB) ...")
-        if not _scarica_ripristinabile(url, safe_zip, get_token,
-                                       expected=int(p.get("ContentLength", 0) or 0)):
+        try:
+            ok = _scarica_ripristinabile(url, safe_zip, get_token,
+                                         expected=int(p.get("ContentLength", 0) or 0))
+        except urllib.error.HTTPError as ex:
+            ok = False
+            if ex.code == 401:
+                log("    ! 401 Unauthorized: credenziali CDSE errate/non confermate "
+                    "(verifica l'account su dataspace.copernicus.eu) o token scaduto")
+            else:
+                log(f"    ! download fallito (HTTP {ex.code}); continuo")
+        except urllib.error.URLError as ex:
+            ok = False
+            log(f"    ! download fallito (rete: {ex.reason}); controlla la connessione "
+                "e riprova")
+        if not ok:
             log("    ! download fallito; continuo"); continue
         # estrai dal SAFE i measurement tiff + annotation della polarizzazione
         try:
@@ -230,6 +318,11 @@ def _trova_annotation(tif, stack, pol):
     s, sw, dt = m.groups()
     for x in glob.glob(os.path.join(stack, "*.annotation.xml")):
         xb = os.path.basename(x).lower()
+        # scarta le annotazioni ausiliarie del SAFE (rfi/calibration/noise): non
+        # contengono la geometria del prodotto (radarFrequency, ecc.). Quella di
+        # prodotto inizia col nome satellite (es. 's1a-iw2-slc-...').
+        if not xb.startswith(("s1a-", "s1b-", "s1c-", "s1d-")):
+            continue
         if s in xb and f"iw{sw}" in xb and dt in xb:
             return x
 
@@ -256,7 +349,83 @@ def _leggi_complesso(ds, win):
     return a.astype(np.complex64)
 
 
-def step3_estrai_box(stackdir, pol, aoi, boxpath, fallback_box):
+def _acq_secs(nome):
+    """Secondi-del-giorno dell'istante di acquisizione (HHMMSS nel nome SAFE/TIFF).
+    Scene dello STESSO relative orbit (track) sovrappongono l'AOI quasi alla stessa
+    ora del giorno: questo e' un identificatore robusto del track."""
+    m = re.search(r"(\d{8})t(\d{2})(\d{2})(\d{2})", nome.lower())
+    if not m:
+        return None
+    return int(m.group(2)) * 3600 + int(m.group(3)) * 60 + int(m.group(4))
+
+
+def _subpix_offset(ref, mov):
+    """Offset sub-pixel (d_az, d_rng) che porta 'mov' su 'ref' + correlazione di
+    picco, via cross-correlazione FFT delle ampiezze con interpolazione parabolica.
+    Serve a VERIFICARE quanto due scene si sfasano (diagnostica), non a co-registrare
+    (il geocoding via GCP allinea gia' le scene dello stesso track)."""
+    naz, nrg = ref.shape
+    a = np.abs(ref).astype(float); b = np.abs(mov).astype(float)
+    a = (a - a.mean()) / (a.std() + 1e-9); b = (b - b.mean()) / (b.std() + 1e-9)
+    c = np.fft.fftshift(np.fft.ifft2(np.fft.fft2(a) * np.conj(np.fft.fft2(b))).real)
+    p = np.unravel_index(np.argmax(c), c.shape)
+
+    def par(i, ax):
+        s = c.shape[ax]; im, ip = (i - 1) % s, (i + 1) % s
+        y = (c[im, p[1]], c[i, p[1]], c[ip, p[1]]) if ax == 0 else \
+            (c[p[0], im], c[p[0], i], c[p[0], ip])
+        den = (y[0] - 2 * y[1] + y[2])
+        return 0.0 if den == 0 else 0.5 * (y[0] - y[2]) / den
+
+    daz = (p[0] - naz // 2) + par(p[0], 0)
+    drg = (p[1] - nrg // 2) + par(p[1], 1)
+    corr = c.max() / (np.sqrt((a ** 2).sum() * (b ** 2).sum()) + 1e-9)
+    return daz, drg, corr
+
+
+def _verifica_e_filtra_track(chips, nomi, geom, tol_s=20, track_filter=True):
+    """VERIFICA le coordinate/geometria delle scene e quanto si sfasano tra loro,
+    poi (se track_filter) tiene solo le scene del relative orbit dominante: scene di
+    track diversi sono decorrelate e degradano coerenza e quote. Ritorna gli indici
+    da tenere e la diagnostica (offset px/m + correlazione per scena)."""
+    n = len(chips)
+    dR = geom["dR"]; dA = geom["dA"]; inc = geom["incid_mid"]
+    gr = dR / np.sin(np.radians(inc))            # passo ground-range [m]
+    secs = [_acq_secs(x) for x in nomi]
+    # raggruppa per ora-del-giorno (track): cluster entro tol_s secondi
+    groups = []
+    for i, s in enumerate(secs):
+        for grp in groups:
+            if s is not None and abs(s - secs[grp[0]]) <= tol_s:
+                grp.append(i); break
+        else:
+            groups.append([i])
+    groups.sort(key=lambda g: (-len(g), secs[g[0]] or 0))
+    keep = sorted(groups[0]) if (track_filter and groups) else list(range(n))
+    ref = keep[0]                                # riferimento = 1a scena del track tenuto
+
+    log(f"[3] VERIFICA scene: {n} ritagliate, {len(groups)} track distinti "
+        f"(per ora di acquisizione, tol {tol_s}s)")
+    log(f"      {'data':<10}{'sat':<5}{'acq UTC':>9}{'d_az[px]':>9}{'d_rg[px]':>9}"
+        f"{'d_az[m]':>9}{'d_rg[m]':>9}{'corr':>7}  nota")
+    diag = []
+    for i in range(n):
+        daz, drg, corr = _subpix_offset(chips[ref], chips[i])
+        hh = secs[i]
+        acq = f"{hh//3600:02d}:{(hh%3600)//60:02d}:{hh%60:02d}" if hh is not None else "??"
+        dt = _data_scena(nomi[i]); sat = nomi[i][:3]
+        nota = "RIF" if i == ref else ("tenuta" if i in keep
+               else "ESCLUSA (track diverso)")
+        log(f"      {dt:<10}{sat:<5}{acq:>9}{daz:>9.2f}{drg:>9.2f}"
+            f"{daz*dA:>9.1f}{drg*gr:>9.1f}{corr:>7.2f}  {nota}")
+        diag.append((dt, sat, daz, drg, corr, i in keep))
+    if track_filter and len(keep) < n:
+        log(f"[3] track dominante: {len(keep)}/{n} scene tenute "
+            f"(escluse {n-len(keep)} di altri track -> avrebbero decorrelato le quote)")
+    return keep, diag
+
+
+def step3_estrai_box(stackdir, pol, aoi, boxpath, fallback_box, track_filter=True):
     """Geolocalizza l'AOI su ogni TIFF via i GCP e ritaglia lo stack complesso."""
     lonW, lonE, latS, latN = aoi
     corners = [(lonW, latN), (lonE, latN), (lonE, latS), (lonW, latS)]
@@ -295,15 +464,29 @@ def step3_estrai_box(stackdir, pol, aoi, boxpath, fallback_box):
         valid = float(np.mean(np.abs(chip) > 0) * 100)
         log(f"    >> {os.path.basename(tif)} {chip.shape[1]}x{chip.shape[0]}px "
             f"(rng x az) valid {valid:.0f}%")
+        # un chip quasi tutto-zeri = AOI sul bordo dello swath / fuori dal burst:
+        # non copre davvero l'area e inquinerebbe gli interferogrammi -> scarta
+        if valid < MIN_VALID_PCT:
+            log(f"       (copertura {valid:.0f}% < {MIN_VALID_PCT:.0f}%: l'AOI non e' "
+                "nello swath di questo sub-swath, skip)")
+            continue
         chips.append(chip); nomi.append(os.path.basename(tif)); geom = g
     if not chips:
         sys.exit("[3] nessuna scena copre l'AOI")
     H = min(c.shape[0] for c in chips); W = min(c.shape[1] for c in chips)
-    arr = np.stack([c[:H, :W] for c in chips], 0)
-    np.savez_compressed(boxpath, vv=arr, vv_scene=np.array(nomi),
+    chips = [c[:H, :W] for c in chips]
+    # verifica geometria/sfasamento tra le scene e tiene solo il track dominante
+    keep, diag = _verifica_e_filtra_track(chips, nomi, geom, track_filter=track_filter)
+    arr = np.stack([chips[i] for i in keep], 0)
+    nomi_k = [nomi[i] for i in keep]
+    off_az = np.array([diag[i][2] for i in keep], np.float32)
+    off_rg = np.array([diag[i][3] for i in keep], np.float32)
+    corr_ref = np.array([diag[i][4] for i in keep], np.float32)
+    np.savez_compressed(boxpath, vv=arr, vv_scene=np.array(nomi_k),
                         corners_lonlat=np.array(corners),
                         dR=geom["dR"], dA=geom["dA"], incid_mid=geom["incid_mid"],
-                        f_em=geom["f_em"], R_near=geom["R_near"], dt_az=geom["dt_az"])
+                        f_em=geom["f_em"], R_near=geom["R_near"], dt_az=geom["dt_az"],
+                        off_az_px=off_az, off_rg_px=off_rg, corr_ref=corr_ref)
     log(f"[3] stack ritagliato {arr.shape} (n_scene, az, rng) -> {boxpath}")
     return boxpath
 
@@ -317,10 +500,13 @@ def _data_scena(nome):
 
 def step4_array_12(boxpath, n_layers, outdir):
     """Costruisce l'array a n_layers strati della COMPONENTE VERTICALE dello
-    spostamento. Ogni strato = un interferogramma (coppia di scene) a baseline
-    temporale crescente: phi = arg(s_j * conj(s_i)); LOS = -lambda/(4pi)*phi;
-    verticale = LOS / cos(theta_inc). Con 12+ scene bastano le coppie sequenziali;
-    con poche scene si usano le coppie a baseline minima fino ad arrivare a 12."""
+    spostamento (DInSAR classica, coerente con la skill sar-dinsar-microdisplacement:
+    phi = arg(s_j * conj(s_i)) -> LOS = -lambda/(4pi)*phi -> verticale = LOS/cos(theta)).
+    NON e' la tomografia Doppler a sub-aperture del paper Biondi-Malanga (vedi note
+    nel docstring del modulo): qui ogni strato e' un interferogramma fra due
+    acquisizioni in DATE diverse, non una sub-apertura Doppler di una singola
+    immagine. Con 12+ scene bastano le coppie sequenziali; con poche scene si usano
+    le coppie a baseline minima fino ad arrivare a n_layers."""
     d = np.load(boxpath, allow_pickle=True)
     vv = d["vv"]
     nomi = [str(x) for x in d["vv_scene"]]
@@ -346,6 +532,13 @@ def step4_array_12(boxpath, n_layers, outdir):
                  for i in range(nS - 1)][:n_layers]
     else:
         pairs = pairs[:n_layers]
+    if len(pairs) == 0:
+        sys.exit(
+            f"[4] impossibile proseguire: l'interferometria richiede ALMENO 2 "
+            f"acquisizioni dello stesso track, ma lo stack ne contiene {nS} "
+            f"(date: {sorted(set(date))}).\n"
+            f"    -> scarica altre date con --download e credenziali CDSE valide "
+            f"(il download nello step 2 e' fallito: 401 Unauthorized / rete assente).")
     if len(pairs) < n_layers:
         log(f"[4] ATTENZIONE: solo {len(pairs)} coppie disponibili (< {n_layers})")
 
@@ -383,7 +576,7 @@ def step4_array_12(boxpath, n_layers, outdir):
         else:
             ax.axis("off")
     fig.colorbar(im, ax=axes, shrink=0.7, label="spostamento verticale [mm]")
-    fig.suptitle(f"Step 4 — array a {len(pairs)} strati (componente verticale)")
+    fig.suptitle(f"Step 4 — array a {len(pairs)} strati (componente verticale, DInSAR)")
     fig.savefig(os.path.join(outdir, "step4_strati.png"), dpi=120, bbox_inches="tight")
     plt.close(fig)
     return disp, phi_st, x, y, coh
@@ -399,11 +592,16 @@ def _fetch_dem(aoi, ny, nx, outdir, pyramid):
     j = np.arange(nx); i = np.arange(ny)
     lon = lonW + (j / max(nx - 1, 1)) * (lonE - lonW)
     lat = latS + (i / max(ny - 1, 1)) * (latN - latS)
+    z0 = None
     if os.path.exists(cache):
         # la cache contiene il DEM NUDO (senza overlay piramide)
-        z0 = np.load(cache)["z0"].astype(float)
-        log(f"[DEM] riuso {cache}: quota terreno {z0.min():.0f}..{z0.max():.0f} m s.l.m.")
-    else:
+        cached = np.load(cache)["z0"].astype(float)
+        if cached.shape == (ny, nx):
+            z0 = cached
+            log(f"[DEM] riuso {cache}: quota terreno {z0.min():.0f}..{z0.max():.0f} m s.l.m.")
+        else:
+            log(f"[DEM] cache {cache} ignorata: shape {cached.shape} != griglia ({ny},{nx})")
+    if z0 is None:
         GC = 10
         CLAT, CLON = np.meshgrid(np.linspace(latS, latN, GC),
                                  np.linspace(lonW, lonE, GC), indexing="ij")
@@ -450,10 +648,12 @@ def _fetch_dem(aoi, ny, nx, outdir, pyramid):
 def step5_grafico_onde(disp, phi, x, y, aoi, outdir, pyramid,
                        NZ=256, ZTOP=210.0, ZBOT=-200.0, STEP_X=4, STEP_Y=2,
                        WIGGLE=14.0):
-    """Grafico 3D dell'array: i numeri dei n_layers strati di ogni pixel sono i
-    coefficienti armonici complessi (ampiezza=|vert|, fase=fase interferometrica)
-    di una forma d'onda sviluppata in profondita' via anti-trasformata di Fourier.
-    Le onde partono dalla QUOTA REALE del suolo (DEM)."""
+    """Grafico 3D dell'array: i numeri dei n_layers strati DInSAR di ogni pixel
+    sono usati come coefficienti armonici complessi (ampiezza=|vert|, fase=fase
+    interferometrica) di una forma d'onda sviluppata in profondita' via
+    anti-trasformata di Fourier su un range di profondita' SCELTO (ZTOP..ZBOT),
+    non derivato dalla geometria SAR. Le onde partono dalla QUOTA REALE del
+    suolo (DEM). Analisi esplorativa: vedi nota metodologica in cima al modulo."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
@@ -473,7 +673,8 @@ def step5_grafico_onde(disp, phi, x, y, aoi, outdir, pyramid,
     spec[:, 1:1 + nS] = coeff.reshape(nS, ny * nx).T
     w = (np.fft.irfft(spec, n=NZ, axis=1) * NZ).reshape(ny, nx, NZ).astype(np.float32)
     wmax = float(np.abs(w).max()) or 1.0
-    log(f"[5] forme d'onda: anti-FT di {nS} armoniche -> w {w.shape}, |w|max={wmax:.1f}; "
+    log(f"[5] forme d'onda (analisi esplorativa, NON tomografia Doppler del paper): "
+        f"anti-FT di {nS} armoniche -> w {w.shape}, |w|max={wmax:.1f}; "
         f"base {Lx:.0f}x{Ly:.0f} m, profondita' {ZD:.0f} m")
 
     np.savez_compressed(os.path.join(outdir, "forme_donda.npz"),
@@ -520,7 +721,8 @@ def step5_grafico_onde(disp, phi, x, y, aoi, outdir, pyramid,
         f"onde sviluppate fino a quota {ZBOT:.0f} m s.l.m. "
         f"(= {abs(ZBOT):.0f} m di profondita' sotto il livello 0)")
     fig.update_layout(
-        title=f"Step 5 — grafico 3D dell'array a {nS} strati: forme d'onda dalla "
+        title=f"Step 5 (esplorativo, non e' la tomografia Doppler del paper) — "
+              f"grafico 3D dell'array a {nS} strati: forme d'onda dalla "
               f"quota reale ({z0.min():.0f}-{z0.max():.0f} m s.l.m.), livello 0 = mare",
         scene=dict(xaxis_title="x E-W [m]", yaxis_title="y N-S [m]",
                    zaxis_title="quota reale s.l.m. [m]", zaxis=dict(range=[ZBOT, ZTOP]),
@@ -559,9 +761,12 @@ def step5_grafico_onde(disp, phi, x, y, aoi, outdir, pyramid,
 # ===================================================================== STEP 6
 def step6_variazioni(w, z, x_m, y_m, z0, Lx, Ly, ZD, ZTOP, ZBOT, outdir,
                      DMIN=0.035, DMAX=0.06):
-    """Punti dove le forme d'onda variano in FREQUENZA (=> densita'): frequenza
-    istantanea lungo la profondita' (Hilbert) -> |d(freq)/dz|; i punti nella
-    banda densita' sono disegnati in 3D alle ALTEZZE REALI (quota DEM - profondita')."""
+    """Punti dove le forme d'onda (esplorative, step 5) variano in FREQUENZA
+    (=> proxy di densita'): frequenza istantanea lungo la profondita' (Hilbert)
+    -> |d(freq)/dz|; i punti nella banda scelta sono disegnati in 3D alle
+    ALTEZZE REALI (quota DEM - profondita'). Vedi nota metodologica in cima al
+    modulo: e' un'analisi ispirata al lessico Biondi-Malanga ma non e' la loro
+    tomografia Doppler a sub-aperture."""
     from scipy.signal import hilbert
     import matplotlib
     matplotlib.use("Agg")
@@ -613,15 +818,97 @@ def step6_variazioni(w, z, x_m, y_m, z0, Lx, Ly, ZD, ZTOP, ZBOT, outdir,
         marker=dict(size=1.2, color=pv, colorscale="Inferno", opacity=0.85,
                     colorbar=dict(title="|Δfreq| (densita')"))), zero_plane, ground])
     fig.update_layout(
-        title=f"Step 6 — punti di variazione di frequenza (=> densita') alle altezze "
+        title=f"Step 6 (esplorativo, non e' la tomografia Doppler del paper) — "
+              f"punti di variazione di frequenza (=> densita') alle altezze "
               f"reali — base {Lx:.0f}×{Ly:.0f} m (livello 0 = mare)",
         scene=dict(xaxis_title="x E-W [m]", yaxis_title="y N-S [m]",
                    zaxis_title="quota s.l.m. [m] (+ = altezza, − = profondita' dal livello 0)",
                    zaxis=dict(range=[ZBOT, ZTOP]),
                    aspectmode="manual",
                    aspectratio=dict(x=1.0, y=Ly / Lx, z=(ZTOP - ZBOT) / Lx)))
+    # --- pulsante per esportare i 2 piani di sezione (E-W e N-S) del punto in fuoco ---
+    dx = float(np.min(np.diff(x_m))) if len(x_m) > 1 else 1.0
+    dy = float(np.min(np.diff(y_m))) if len(y_m) > 1 else 1.0
+    cs = dict(PX=[round(float(v), 2) for v in px],
+              PY=[round(float(v), 2) for v in py],
+              PZ=[round(float(v), 2) for v in pz],
+              PV=[round(float(v), 5) for v in pv],
+              TOLX=dx / 2.0, TOLY=dy / 2.0)
+    post_script = """
+var gd = document.getElementById('{plot_id}');
+var CS = __CSDATA__;
+var sel = {x: null, y: null, z: null};
+
+var bar = document.createElement('div');
+bar.style.cssText = 'position:fixed;top:10px;left:10px;z-index:1000;background:rgba(255,255,255,0.92);' +
+    'padding:8px 10px;border:1px solid #888;border-radius:6px;font-family:sans-serif;font-size:13px;' +
+    'box-shadow:0 1px 4px rgba(0,0,0,0.3)';
+var info = document.createElement('div');
+info.style.marginBottom = '6px';
+info.textContent = 'Clicca un punto per dargli il fuoco';
+var btn = document.createElement('button');
+btn.textContent = 'Salva piani E-W & N-S (PNG)';
+btn.disabled = true;
+btn.style.cssText = 'cursor:pointer;padding:5px 8px;font-size:13px';
+bar.appendChild(info); bar.appendChild(btn);
+document.body.appendChild(bar);
+
+gd.on('plotly_click', function(d){
+    if(!d || !d.points || !d.points.length) return;
+    var p = d.points[0];
+    sel.x = p.x; sel.y = p.y; sel.z = p.z;
+    info.textContent = 'Fuoco: x=' + Math.round(sel.x) + ' m, y=' + Math.round(sel.y) +
+        ' m, quota=' + Math.round(sel.z) + ' m';
+    btn.disabled = false;
+});
+
+btn.onclick = function(){
+    if(sel.x === null) return;
+    var ewx=[], ewz=[], ewc=[], nsy=[], nsz=[], nsc=[];
+    for(var i=0; i<CS.PX.length; i++){
+        if(Math.abs(CS.PY[i] - sel.y) <= CS.TOLY){ ewx.push(CS.PX[i]); ewz.push(CS.PZ[i]); ewc.push(CS.PV[i]); }
+        if(Math.abs(CS.PX[i] - sel.x) <= CS.TOLX){ nsy.push(CS.PY[i]); nsz.push(CS.PZ[i]); nsc.push(CS.PV[i]); }
+    }
+    var t1 = {type:'scatter', mode:'markers', x:ewx, y:ewz, name:'E-W',
+        marker:{size:5, color:ewc, colorscale:'Inferno', colorbar:{title:'|\\u0394freq|', x:1.0, len:0.9}},
+        xaxis:'x', yaxis:'y'};
+    var t2 = {type:'scatter', mode:'markers', x:nsy, y:nsz, name:'N-S',
+        marker:{size:5, color:nsc, colorscale:'Inferno', showscale:false},
+        xaxis:'x2', yaxis:'y2'};
+    var layout = {
+        width:1300, height:600, showlegend:false,
+        title:'Piani di sezione sul fuoco  x=' + Math.round(sel.x) + ' m, y=' + Math.round(sel.y) +
+            ' m, quota=' + Math.round(sel.z) + ' m',
+        grid:{rows:1, columns:2, pattern:'independent'},
+        xaxis:{title:'x E-W [m]', anchor:'y'},
+        yaxis:{title:'quota s.l.m. [m]'},
+        xaxis2:{title:'y N-S [m]', anchor:'y2'},
+        yaxis2:{title:'quota s.l.m. [m]'},
+        annotations:[
+            {text:'Piano E-W (y=' + Math.round(sel.y) + ' m)  \\u2014 ' + ewx.length + ' punti',
+                x:0.2, xref:'paper', y:1.06, yref:'paper', showarrow:false, font:{size:13}},
+            {text:'Piano N-S (x=' + Math.round(sel.x) + ' m)  \\u2014 ' + nsy.length + ' punti',
+                x:0.8, xref:'paper', y:1.06, yref:'paper', showarrow:false, font:{size:13}}
+        ]
+    };
+    var hidden = document.createElement('div');
+    hidden.style.cssText = 'position:absolute;left:-9999px;top:-9999px';
+    document.body.appendChild(hidden);
+    Plotly.newPlot(hidden, [t1, t2], layout).then(function(){
+        return Plotly.toImage(hidden, {format:'png', width:1300, height:600});
+    }).then(function(url){
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = 'piani_EW_NS_x' + Math.round(sel.x) + '_y' + Math.round(sel.y) + '.png';
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        Plotly.purge(hidden); document.body.removeChild(hidden);
+    });
+};
+""".replace("__CSDATA__", json.dumps(cs))
+
     fig.write_html(os.path.join(outdir, "step6_variazioni_3d.html"),
                    include_plotlyjs="cdn",
+                   post_script=post_script,
                    config=dict(scrollZoom=True, displayModeBar=True))
 
     figm = plt.figure(figsize=(8, 9)); ax = figm.add_subplot(111, projection="3d")
@@ -637,6 +924,41 @@ def step6_variazioni(w, z, x_m, y_m, z0, Lx, Ly, ZD, ZTOP, ZBOT, outdir,
     log(f"[6] salvati step6_variazioni_3d.html/.png")
 
 
+# =============================================== TOMOGRAFIA DOPPLER "VERA" (paper)
+def step_vera_tomografia(nw, nw_lon, se, se_lon, stackdir, outdir,
+                         zmax=8.5, klook=12, ovs=4.0):
+    """Richiama skills/sar-doppler-tomography/scripts/tomographic_images.py, che
+    implementa la tomografia Doppler a sub-aperture di Biondi & Malanga cosi'
+    come descritta nella skill biondi-malanga-sar-tomography (steering matrix
+    Kz = 4*pi*B_perp/(lambda_sonic*r*sin(theta)), inversione h(z) = A^H*Y,
+    risoluzione delta_z = lambda_sonic*R/(2A)) validata su un modello sintetico
+    (vedi sar_tomo.py --self-test). Produce le sezioni tomografiche in stile
+    pubblicazione (B-scan range/azimuth-profondita', slice orizzontali, mappa
+    di quota) usando UNA sola immagine SLC per volta (sub-aperture Doppler),
+    non le coppie interferometriche multi-data usate dagli step 4-6."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    script = os.path.join(here, "skills", "sar-doppler-tomography", "scripts",
+                          "tomographic_images.py")
+    if not os.path.exists(script):
+        log(f"[vera-tomografia] script non trovato: {script}"); return False
+    tomo_out = os.path.join(outdir, "tomografia_vera")
+    os.makedirs(tomo_out, exist_ok=True)
+    cmd = [sys.executable, script,
+          "--stack", stackdir, "--outdir", tomo_out,
+          "--nw", nw[0], nw[1], nw[2], nw[3], nw_lon[0], nw_lon[1],
+          "--nw2", nw_lon[2], nw_lon[3],
+          "--se", se[0], se[1], se[2], se[3], se_lon[0], se_lon[1],
+          "--se2", se_lon[2], se_lon[3],
+          "--zmax", str(zmax), "--klook", str(klook), "--ovs", str(ovs)]
+    log(f"[vera-tomografia] {' '.join(cmd)}")
+    r = subprocess.run(cmd)
+    if r.returncode != 0:
+        log(f"[vera-tomografia] terminato con codice {r.returncode}")
+        return False
+    log(f"[vera-tomografia] output (metodo Biondi-Malanga, coerente col paper) in {tomo_out}/")
+    return True
+
+
 # ===================================================================== main
 def parse_steps(s):
     if "-" in s:
@@ -646,15 +968,19 @@ def parse_steps(s):
 
 def main():
     global DBG
+
     ap = argparse.ArgumentParser(description="Pipeline unica piramide (step 1-6)")
+    ap.add_argument("--pyramid", choices=sorted(PRESETS), default=None,
+                    help="box di default per piramide (cheope|kefren); "
+                         "sovrascrivibile con --nw/--nw-lon/--se/--se-lon")
     ap.add_argument("--nw", nargs=4, metavar=("D", "M", "S", "H"),
-                    default=["29", "58", "48.0", "N"], help="angolo NW lat (DMS)") 
+                    default=None, help="angolo NW lat (DMS)")
     ap.add_argument("--nw-lon", nargs=4, metavar=("D", "M", "S", "H"),
-                    default=["31", "7", "58.4", "E"], help="angolo NW lon (DMS)")  
+                    default=None, help="angolo NW lon (DMS)")
     ap.add_argument("--se", nargs=4, metavar=("D", "M", "S", "H"),
-                    default=["29", "58", "41.0", "N"], help="angolo SE lat (DMS)")
+                    default=None, help="angolo SE lat (DMS)")
     ap.add_argument("--se-lon", nargs=4, metavar=("D", "M", "S", "H"),
-                    default=["31", "8", "07.7", "E"], help="angolo SE lon (DMS)")
+                    default=None, help="angolo SE lon (DMS)")
     ap.add_argument("--pol", default="vv")
     ap.add_argument("--layers", type=int, default=12, help="numero di strati (>=12)")
     ap.add_argument("--start", default="2025-01-01", help="data inizio ricerca YYYY-MM-DD")
@@ -673,14 +999,37 @@ def main():
     ap.add_argument("--dmax", type=float, default=0.06,
                     help="variazione di frequenza MASSIMA della banda densita' (step 6)")
     ap.add_argument("--no-pyramid", action="store_true", help="non sovrapporre la piramide al DEM")
+    ap.add_argument("--no-track-filter", action="store_true",
+                    help="step 3: NON filtrare le scene per track (tiene anche scene di "
+                         "relative orbit diversi, decorrelate -> quote peggiori)")
+    ap.add_argument("--vera-tomografia", action="store_true",
+                    help="oltre agli step scelti, esegue ANCHE la tomografia Doppler "
+                         "vera del paper (skills/sar-doppler-tomography), coerente col "
+                         "metodo Biondi-Malanga (steering matrix + h(z)=A^H*Y)")
+    ap.add_argument("--zmax", type=float, default=8.5,
+                    help="profondita' massima [m] per --vera-tomografia (resta sotto z_amb!)")
+    ap.add_argument("--klook", type=int, default=12,
+                    help="numero di sub-aperture Doppler (look tomografici) per --vera-tomografia")
+    ap.add_argument("--ovs", type=float, default=4.0,
+                    help="oversampling in profondita' per --vera-tomografia")
     ap.add_argument("--debug", action="store_true")
     a = ap.parse_args()
     DBG = a.debug
 
+    if a.nw is None or a.se is None or a.nw_lon is None or a.se_lon is None:
+        if a.pyramid is None:
+            sys.exit("Serve --pyramid {cheope,kefren} oppure tutti e 4 gli angoli "
+                      "--nw/--nw-lon/--se/--se-lon espliciti.")
+        preset = PRESETS[a.pyramid]
+        a.nw = a.nw or list(preset["nw"]); a.nw_lon = a.nw_lon or list(preset["nw_lon"])
+        a.se = a.se or list(preset["se"]); a.se_lon = a.se_lon or list(preset["se_lon"])
+
     here = os.path.dirname(os.path.abspath(__file__))
-    outdir = a.outdir or os.path.join(here, "unificato")
-    stackdir = a.stack or os.path.join(here, "stack_slc")
-    fallback_box = os.path.join(here, "box.npz")
+    preset_dir = PRESETS[a.pyramid]["outdir_name"] if a.pyramid else "goal_out"
+    base_dir = os.path.join(here, preset_dir)
+    outdir = a.outdir or os.path.join(base_dir, "unificato")
+    stackdir = a.stack or os.path.join(base_dir, "stack_slc")
+    fallback_box = os.path.join(base_dir, "box.npz")
     boxpath = os.path.join(outdir, "box.npz")
     os.makedirs(outdir, exist_ok=True)
     pyramid = not a.no_pyramid
@@ -693,19 +1042,25 @@ def main():
     aoi = (lonW, lonE, latS, latN)
 
     log("=" * 70)
-    log(f"PIPELINE UNIFICATA — AOI lon {lonW:.5f}..{lonE:.5f}, lat {latS:.5f}..{latN:.5f}")
+    log(f"PIPELINE UNIFICATA — piramide: {a.pyramid or 'custom'} — "
+        f"AOI lon {lonW:.5f}..{lonE:.5f}, lat {latS:.5f}..{latN:.5f}")
     log(f"step {sorted(steps)} | pol {a.pol} | strati {a.layers} | outdir {outdir}")
+    if a.vera_tomografia:
+        log("  + tomografia Doppler VERA del paper (steering matrix / h(z)=A^H*Y)")
     log("=" * 70)
 
     prods = []
     if 1 in steps:
         prods = step1_cerca(aoi, a.start, a.end, a.max_search, a.pol, outdir)
     if 2 in steps:
-        # senza --download non si scaricano gli ~8 GB/prodotto: si riusa lo stack
-        step2_scarica(prods if a.download else [], a.layers, a.pol, stackdir,
-                      user=a.cdse_user, pwd=a.cdse_pass)
+        # i prodotti trovati dallo step 1 (che contengono le coordinate) vengono
+        # sempre passati allo step 2; il download vero (~8 GB/prodotto) avviene
+        # solo con --download e credenziali CDSE, altrimenti si riusa lo stack.
+        step2_scarica(prods, a.layers, a.pol, stackdir,
+                      user=a.cdse_user, pwd=a.cdse_pass, download=a.download)
     if 3 in steps:
-        step3_estrai_box(stackdir, a.pol, aoi, boxpath, fallback_box)
+        step3_estrai_box(stackdir, a.pol, aoi, boxpath, fallback_box,
+                         track_filter=not a.no_track_filter)
     elif not os.path.exists(boxpath) and os.path.exists(fallback_box):
         boxpath = fallback_box
 
@@ -717,6 +1072,10 @@ def main():
             if 6 in steps:
                 step6_variazioni(w, z, x_m, y_m, z0, Lx, Ly, ZD, ZTOP, ZBOT, outdir,
                                  DMIN=a.dmin, DMAX=a.dmax)
+
+    if a.vera_tomografia:
+        step_vera_tomografia(a.nw, a.nw_lon, a.se, a.se_lon, stackdir, outdir,
+                             zmax=a.zmax, klook=a.klook, ovs=a.ovs)
 
     log("=" * 70)
     log(f"FATTO. Output in: {outdir}")
