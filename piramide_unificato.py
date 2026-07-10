@@ -12,10 +12,11 @@ guidata dalle coordinate, con selezione della piramide via --pyramid.
 Step (allineati al goal):
   1) cerca i file .tiff (prodotti Sentinel-1 SLC) che CONTENGONO le coordinate
      passate al programma -> almeno 12 (catalogo Copernicus Data Space, OData).
-  2) scarica i .tiff dei prodotti trovati (estrae dal pacchetto SAFE il/i
-     measurement TIFF della polarizzazione scelta + annotation.xml), con
+  2) scarica i .tiff dei prodotti trovati (estrae dal pacchetto SAFE i
+     measurement TIFF delle polarizzazioni scelte + annotation.xml), con
      download ripristinabile (riprende da dove interrotto) e token CDSE
-     rinnovato ad ogni tentativo.
+     rinnovato ad ogni tentativo. Default --pol vv,vh: entrambe le
+     polarizzazioni del prodotto IW DV.
   3) estrae l'AREA delle coordinate da ogni .tiff via i GCP del prodotto ->
      stack complesso co-registrato (n_scene, azimuth, range) -> box.npz,
      verificando lo sfasamento tra le scene e tenendo solo il track dominante.
@@ -27,9 +28,13 @@ Step (allineati al goal):
   5) genera il grafico 3D dell'array: i numeri di ogni pixel sono i
      coefficienti armonici di una forma d'onda sviluppata in profondita'
      (anti-trasformata di Fourier) -> superficie reale + "molle" 3D.
+     L'anti-trasformata e' calcolata per OGNI polarizzazione (VV e VH):
+     le tracce VH sono intercalate nelle colonne intermedie fra quelle VV
+     -> raddoppio dei punti in orizzontale con misure indipendenti.
   6) estrae i punti dove le forme d'onda variano in frequenza (=> densita')
      e li disegna in 3D tenendo conto delle ALTEZZE REALI dei punti rispetto
-     al livello 0 (DEM Copernicus + geometria del bersaglio).
+     al livello 0 (DEM Copernicus + geometria del bersaglio); i punti di
+     tutte le polarizzazioni vengono uniti (campo 'pol' nel .npz e nell'hover).
 
 *** NOTA METODOLOGICA IMPORTANTE (vedi anche skill biondi-malanga-sar-tomography) ***
 Gli step 5-6 sono un'analisi ESPLORATIVA ispirata al lessico di Biondi & Malanga
@@ -111,6 +116,31 @@ def dbg(*a):
 def dms2dec(d, m, s, h):
     v = float(d) + float(m) / 60 + float(s) / 3600
     return -v if str(h).upper() in ("S", "W") else v
+
+
+def lista_pol(pol):
+    """Normalizza --pol in lista di polarizzazioni ('vv,vh' -> ['vv','vh']).
+    La PRIMA e' la polarizzazione primaria: riferimento per il conteggio scene,
+    il track filter e la geometria; le altre (es. vh) aggiungono forme d'onda
+    indipendenti -> piu' tracce/punti in orizzontale nei grafici 3D."""
+    if isinstance(pol, str):
+        pol = pol.split(",")
+    out = []
+    for p in pol:
+        p = p.strip().lower()
+        if p and p not in out:
+            out.append(p)
+    return out or ["vv"]
+
+
+def _chiave_scena_sw(nome):
+    """Chiave satellite+subswath+datetime (al minuto): identica per i measurement
+    VV e VH della stessa scena/subswath, che differiscono solo per il token di
+    polarizzazione e per il numero progressivo finale del file."""
+    n = os.path.basename(nome).lower()
+    m1 = re.search(r"(s1[abcd]-iw\d)", n)
+    m2 = re.search(r"(\d{8}t\d{4})", n)
+    return f"{m1.group(1)}-{m2.group(1)}" if (m1 and m2) else n
 
 
 # ===================================================================== STEP 1
@@ -295,20 +325,23 @@ def _dt_scena(nome):
 
 
 def step2_scarica(prods, n_want, pol, stackdir, user=None, pwd=None, download=False):
-    """Scarica i prodotti e ne estrae i measurement TIFF (+ annotation) della
-    polarizzazione richiesta nello stack locale. Il conteggio verso n_want e' in
-    SCENE distinte (datetime di acquisizione), non in TIFF (un SAFE = 3 TIFF della
-    stessa scena). I prodotti del track dominante (stessa ora del giorno) vengono
-    scaricati per primi: gli step 4-6 usano solo scene dello stesso track (cfr.
-    filtro dello step 3), quindi date di track diversi non aggiungerebbero coppie.
+    """Scarica i prodotti e ne estrae i measurement TIFF (+ annotation) delle
+    polarizzazioni richieste (--pol vv,vh) nello stack locale. Il conteggio verso
+    n_want e' in SCENE distinte (datetime di acquisizione) della polarizzazione
+    PRIMARIA, non in TIFF (un SAFE = 3 TIFF per pol della stessa scena). I prodotti
+    del track dominante (stessa ora del giorno) vengono scaricati per primi: gli
+    step 4-6 usano solo scene dello stesso track (cfr. filtro dello step 3), quindi
+    date di track diversi non aggiungerebbero coppie.
     Credenziali CDSE: dai parametri --cdse-user/--cdse-pass oppure dalle variabili
     d'ambiente CDSE_USER/CDSE_PASS (mai hardcoded qui). Se mancano le credenziali
     (o la lista e' vuota), salta e usa quel che c'e'."""
+    pols = lista_pol(pol)
     os.makedirs(stackdir, exist_ok=True)
     # riusa solo TIFF plausibilmente integri (un measurement IW pesa ~1 GB: file
     # molto piccoli = estrazione interrotta a meta' -> da rifare)
     MIN_TIFF = 50_000_000
-    have_all = sorted(glob.glob(os.path.join(stackdir, f"*slc-{pol}-*.tiff")))
+    have_all = sorted({h for p in pols
+                       for h in glob.glob(os.path.join(stackdir, f"*slc-{p}-*.tiff"))})
     have = [h for h in have_all if os.path.getsize(h) >= MIN_TIFF]
     for h in have_all:
         if h not in have:
@@ -316,8 +349,8 @@ def step2_scarica(prods, n_want, pol, stackdir, user=None, pwd=None, download=Fa
                 f"({os.path.getsize(h)/1e6:.0f} MB), lo rimuovo e riestraggo")
             os.remove(h)
     if have:
-        log(f"[2] gia' presenti {len(have)} TIFF '{pol}' in {stackdir} (riuso: "
-            f"{len({_dt_scena(os.path.basename(h)) for h in have})} scene)")
+        log(f"[2] gia' presenti {len(have)} TIFF '{'/'.join(pols)}' in {stackdir} "
+            f"(riuso: {len({_dt_scena(os.path.basename(h)) for h in have})} scene)")
     user = user or os.environ.get("CDSE_USER")
     pwd = pwd or os.environ.get("CDSE_PASS")
     if not prods:
@@ -365,8 +398,10 @@ def step2_scarica(prods, n_want, pol, stackdir, user=None, pwd=None, download=Fa
 
     got = list(have)
     for p in prods:
-        # n_want conta SCENE distinte (datetime), non TIFF: 1 SAFE = 3 TIFF iw1-3
-        scene = {_dt_scena(os.path.basename(g)) for g in got}
+        # n_want conta SCENE distinte (datetime) della pol PRIMARIA, non TIFF:
+        # 1 SAFE = 3 TIFF iw1-3 per polarizzazione
+        scene = {_dt_scena(os.path.basename(g)) for g in got
+                 if f"-{pols[0]}-" in os.path.basename(g).lower()}
         if len(scene) >= n_want:
             break
         if _dt_scena(p["Name"]) in scene:
@@ -403,7 +438,7 @@ def step2_scarica(prods, n_want, pol, stackdir, user=None, pwd=None, download=Fa
                 break
         if not ok:
             log("    ! download fallito; continuo"); continue
-        # estrai dal SAFE i measurement tiff + annotation della polarizzazione.
+        # estrai dal SAFE i measurement tiff + annotation delle polarizzazioni.
         # Scrittura ATOMICA (tmp + rename): un'interruzione a meta' estrazione non
         # deve lasciare nello stack file troncati indistinguibili da quelli buoni.
         try:
@@ -411,9 +446,10 @@ def step2_scarica(prods, n_want, pol, stackdir, user=None, pwd=None, download=Fa
                 for nm in z.namelist():
                     low = nm.lower()
                     dst = None
-                    if f"-{pol}-" in low and low.endswith(".tiff") and "/measurement/" in low:
+                    pol_ok = any(f"-{q}-" in low for q in pols)
+                    if pol_ok and low.endswith(".tiff") and "/measurement/" in low:
                         dst = os.path.join(stackdir, os.path.basename(low))
-                    elif f"-{pol}-" in low and low.endswith(".xml") and "/annotation/" in low \
+                    elif pol_ok and low.endswith(".xml") and "/annotation/" in low \
                             and "/calibration/" not in low:
                         dst = os.path.join(stackdir, os.path.basename(low).replace(
                             ".xml", ".annotation.xml"))
@@ -432,7 +468,7 @@ def step2_scarica(prods, n_want, pol, stackdir, user=None, pwd=None, download=Fa
             os.remove(safe_zip)
         except Exception as ex:
             log(f"    ! estrazione SAFE fallita ({ex})")
-    log(f"[2] TIFF '{pol}' disponibili nello stack: {len(got)} "
+    log(f"[2] TIFF '{'/'.join(pols)}' disponibili nello stack: {len(got)} "
         f"({len({_dt_scena(os.path.basename(g)) for g in got})} scene distinte)")
     return got
 
@@ -553,21 +589,13 @@ def _verifica_e_filtra_track(chips, nomi, geom, tol_s=20, track_filter=True):
     return keep, diag
 
 
-def step3_estrai_box(stackdir, pol, aoi, boxpath, fallback_box, track_filter=True):
-    """Geolocalizza l'AOI su ogni TIFF via i GCP e ritaglia lo stack complesso."""
-    lonW, lonE, latS, latN = aoi
-    corners = [(lonW, latN), (lonE, latN), (lonE, latS), (lonW, latS)]
+def _estrai_chips_pol(stackdir, pol, corners):
+    """Geolocalizza l'AOI su ogni TIFF della polarizzazione `pol` via i GCP e
+    ritaglia i chip complessi. Ritorna (chips, nomi, geom)."""
     tiffs = sorted(glob.glob(os.path.join(stackdir, f"*-iw[1-3]-slc-{pol}-*.tiff"))) or \
             sorted(glob.glob(os.path.join(stackdir, f"*slc-{pol}-*.tiff")))
     if not tiffs:
-        if os.path.exists(fallback_box):
-            log(f"[3] nessun TIFF in {stackdir}: uso il box gia' ritagliato "
-                f"{fallback_box} (fallback)")
-            d = np.load(fallback_box, allow_pickle=True)
-            np.savez_compressed(boxpath, **{k: d[k] for k in d.files})
-            return boxpath
-        sys.exit(f"[3] nessun TIFF in {stackdir} e nessun fallback {fallback_box}")
-
+        return [], [], None
     import rasterio
     from rasterio.windows import Window
     from rasterio.transform import GCPTransformer
@@ -599,23 +627,75 @@ def step3_estrai_box(stackdir, pol, aoi, boxpath, fallback_box, track_filter=Tru
                 "nello swath di questo sub-swath, skip)")
             continue
         chips.append(chip); nomi.append(os.path.basename(tif)); geom = g
-    if not chips:
-        sys.exit("[3] nessuna scena copre l'AOI")
-    H = min(c.shape[0] for c in chips); W = min(c.shape[1] for c in chips)
-    chips = [c[:H, :W] for c in chips]
-    # verifica geometria/sfasamento tra le scene e tiene solo il track dominante
-    keep, diag = _verifica_e_filtra_track(chips, nomi, geom, track_filter=track_filter)
-    arr = np.stack([chips[i] for i in keep], 0)
-    nomi_k = [nomi[i] for i in keep]
+    return chips, nomi, geom
+
+
+def step3_estrai_box(stackdir, pol, aoi, boxpath, fallback_box, track_filter=True):
+    """Ritaglia lo stack complesso dell'AOI per OGNI polarizzazione richiesta
+    (--pol vv,vh). Il track filter e' calcolato sulla polarizzazione primaria e
+    applicato per scena alle altre (VV e VH della stessa scena condividono
+    acquisizione e griglia raster). Nel box .npz: <pol>=stack, <pol>_scene=nomi."""
+    pols = lista_pol(pol)
+    lonW, lonE, latS, latN = aoi
+    corners = [(lonW, latN), (lonE, latN), (lonE, latS), (lonW, latS)]
+    per_pol, geom = {}, None
+    for p in pols:
+        log(f"[3] ritaglio polarizzazione '{p}'...")
+        chips, nomi, g = _estrai_chips_pol(stackdir, p, corners)
+        if chips:
+            per_pol[p] = (chips, nomi)
+            geom = geom or g
+        else:
+            log(f"[3] pol '{p}': nessun TIFF utilizzabile in {stackdir}")
+    if not per_pol:
+        if os.path.exists(fallback_box):
+            log(f"[3] nessun TIFF in {stackdir}: uso il box gia' ritagliato "
+                f"{fallback_box} (fallback)")
+            d = np.load(fallback_box, allow_pickle=True)
+            np.savez_compressed(boxpath, **{k: d[k] for k in d.files})
+            return boxpath
+        sys.exit(f"[3] nessun TIFF in {stackdir} e nessun fallback {fallback_box}")
+
+    # dimensioni comuni a TUTTI i chip (le pol condividono la griglia raster)
+    H = min(c.shape[0] for chips, _ in per_pol.values() for c in chips)
+    W = min(c.shape[1] for chips, _ in per_pol.values() for c in chips)
+    per_pol = {p: ([c[:H, :W] for c in chips], nomi)
+               for p, (chips, nomi) in per_pol.items()}
+
+    # verifica geometria/sfasamento sul PRIMARIO e tiene solo il track dominante
+    primario = next(p for p in pols if p in per_pol)
+    chips0, nomi0 = per_pol[primario]
+    keep, diag = _verifica_e_filtra_track(chips0, nomi0, geom, track_filter=track_filter)
+    arr = np.stack([chips0[i] for i in keep], 0)
+    nomi_k = [nomi0[i] for i in keep]
     off_az = np.array([diag[i][2] for i in keep], np.float32)
     off_rg = np.array([diag[i][3] for i in keep], np.float32)
     corr_ref = np.array([diag[i][4] for i in keep], np.float32)
-    np.savez_compressed(boxpath, vv=arr, vv_scene=np.array(nomi_k),
+    salva = {primario: arr, f"{primario}_scene": np.array(nomi_k)}
+
+    # altre polarizzazioni: stesse SCENE tenute per il primario (chiave
+    # satellite+subswath+datetime -> il measurement gemello dell'altra pol)
+    for p, (chips_p, nomi_p) in per_pol.items():
+        if p == primario:
+            continue
+        idx = {_chiave_scena_sw(n): i for i, n in enumerate(nomi_p)}
+        sel = [(idx[_chiave_scena_sw(n)], n) for n in nomi_k
+               if _chiave_scena_sw(n) in idx]
+        if len(sel) < 2:
+            log(f"[3] pol '{p}': solo {len(sel)} scene coincidenti col track "
+                f"del primario (<2), la escludo dal box")
+            continue
+        salva[p] = np.stack([chips_p[i] for i, _ in sel], 0)
+        salva[f"{p}_scene"] = np.array([nomi_p[i] for i, _ in sel])
+        log(f"[3] pol '{p}': {len(sel)} scene allineate alle {len(nomi_k)} del primario")
+
+    np.savez_compressed(boxpath, **salva,
                         corners_lonlat=np.array(corners),
                         dR=geom["dR"], dA=geom["dA"], incid_mid=geom["incid_mid"],
                         f_em=geom["f_em"], R_near=geom["R_near"], dt_az=geom["dt_az"],
                         off_az_px=off_az, off_rg_px=off_rg, corr_ref=corr_ref)
-    log(f"[3] stack ritagliato {arr.shape} (n_scene, az, rng) -> {boxpath}")
+    log(f"[3] stack ritagliato {arr.shape} (n_scene, az, rng), "
+        f"pol nel box: {[p for p in pols if p in salva]} -> {boxpath}")
     return boxpath
 
 
@@ -626,29 +706,15 @@ def _data_scena(nome):
     return m.group(1) if m else "00000000"
 
 
-def step4_array_12(boxpath, n_layers, outdir):
-    """Costruisce l'array a n_layers strati della COMPONENTE VERTICALE dello
-    spostamento (DInSAR classica, coerente con la skill sar-dinsar-microdisplacement:
-    phi = arg(s_j * conj(s_i)) -> LOS = -lambda/(4pi)*phi -> verticale = LOS/cos(theta)).
-    NON e' la tomografia Doppler a sub-aperture del paper Biondi-Malanga (vedi note
-    nel docstring del modulo): qui ogni strato e' un interferogramma fra due
-    acquisizioni in DATE diverse, non una sub-apertura Doppler di una singola
-    immagine. Con 12+ scene bastano le coppie sequenziali; con poche scene si usano
-    le coppie a baseline minima fino ad arrivare a n_layers."""
-    d = np.load(boxpath, allow_pickle=True)
-    vv = d["vv"]
-    nomi = [str(x) for x in d["vv_scene"]]
-    inc = float(d["incid_mid"]); f_em = float(d["f_em"])
-    dR = float(d["dR"]); dA = float(d["dA"])
-    lam = C / f_em
-    K = lam / (4 * np.pi) * 1000.0                 # mm per radiante
-    cth = np.cos(np.radians(inc))                  # proiezione LOS -> verticale
-    gr = dR / np.sin(np.radians(inc))              # passo ground-range [m]
-
+def _interferogrammi_pol(stack, nomi, n_layers, K, cth, etichetta_pol):
+    """Coppie interferometriche e strati (disp verticale [mm], fase [rad]) per
+    una singola polarizzazione. Ritorna (disp, phi_st, etich) o None se lo
+    stack non ha abbastanza scene (<2)."""
     date = [_data_scena(n) for n in nomi]
     order = np.argsort(date)
-    vv = vv[order]; nomi = [nomi[i] for i in order]; date = [date[i] for i in order]
-    nS, ny, nx = vv.shape
+    stack = stack[order]; nomi = [nomi[i] for i in order]
+    date = [date[i] for i in order]
+    nS, ny, nx = stack.shape
     dnum = np.array([np.datetime64(f"{x[:4]}-{x[4:6]}-{x[6:8]}") for x in date])
 
     # coppie (i<j) ordinate per baseline temporale, poi per data
@@ -661,53 +727,106 @@ def step4_array_12(boxpath, n_layers, outdir):
     else:
         pairs = pairs[:n_layers]
     if len(pairs) == 0:
-        sys.exit(
-            f"[4] impossibile proseguire: l'interferometria richiede ALMENO 2 "
-            f"acquisizioni dello stesso track, ma lo stack ne contiene {nS} "
-            f"(date: {sorted(set(date))}).\n"
-            f"    -> scarica altre date con --download e credenziali CDSE valide "
-            f"(il download nello step 2 e' fallito: 401 Unauthorized / rete assente).")
+        return None
     if len(pairs) < n_layers:
-        log(f"[4] ATTENZIONE: solo {len(pairs)} coppie disponibili (< {n_layers})")
+        log(f"[4] ATTENZIONE (pol {etichetta_pol}): solo {len(pairs)} coppie "
+            f"disponibili (< {n_layers})")
 
     disp = np.empty((len(pairs), ny, nx), np.float32)   # componente verticale [mm]
     phi_st = np.empty((len(pairs), ny, nx), np.float32) # fase interferometrica [rad]
     etich = []
     for s, (i, j, bt) in enumerate(pairs):
-        phi = np.angle(vv[j] * np.conj(vv[i]))
+        phi = np.angle(stack[j] * np.conj(stack[i]))
         phi_st[s] = phi
         disp[s] = (-K * phi / cth).astype(np.float32)
         etich.append(f"{date[i]}~{date[j]} ({bt}d)")
+    return disp, phi_st, etich
+
+
+def step4_array_12(boxpath, n_layers, outdir):
+    """Costruisce l'array a n_layers strati della COMPONENTE VERTICALE dello
+    spostamento (DInSAR classica, coerente con la skill sar-dinsar-microdisplacement:
+    phi = arg(s_j * conj(s_i)) -> LOS = -lambda/(4pi)*phi -> verticale = LOS/cos(theta)),
+    per OGNI polarizzazione presente nel box (--pol vv,vh): ogni pol e' una misura
+    indipendente della stessa scena e alimenta forme d'onda proprie negli step 5-6.
+    NON e' la tomografia Doppler a sub-aperture del paper Biondi-Malanga (vedi note
+    nel docstring del modulo): qui ogni strato e' un interferogramma fra due
+    acquisizioni in DATE diverse, non una sub-apertura Doppler di una singola
+    immagine. Con 12+ scene bastano le coppie sequenziali; con poche scene si usano
+    le coppie a baseline minima fino ad arrivare a n_layers.
+    Ritorna (per_pol, x, y, coh) con per_pol = {pol: (disp, phi)}."""
+    d = np.load(boxpath, allow_pickle=True)
+    pols = [p for p in ("vv", "vh", "hh", "hv") if p in d.files]
+    if not pols:
+        sys.exit(f"[4] nessuna polarizzazione nel box {boxpath}")
+    inc = float(d["incid_mid"]); f_em = float(d["f_em"])
+    dR = float(d["dR"]); dA = float(d["dA"])
+    lam = C / f_em
+    K = lam / (4 * np.pi) * 1000.0                 # mm per radiante
+    cth = np.cos(np.radians(inc))                  # proiezione LOS -> verticale
+    gr = dR / np.sin(np.radians(inc))              # passo ground-range [m]
+
+    per_pol, etich_pol = {}, {}
+    for p in pols:
+        nomi = [str(x) for x in d[f"{p}_scene"]]
+        r = _interferogrammi_pol(d[p], nomi, n_layers, K, cth, p)
+        if r is None:
+            if p == pols[0]:
+                date = sorted({_data_scena(n) for n in nomi})
+                sys.exit(
+                    f"[4] impossibile proseguire: l'interferometria richiede ALMENO 2 "
+                    f"acquisizioni dello stesso track, ma lo stack '{p}' ne contiene "
+                    f"{d[p].shape[0]} (date: {date}).\n"
+                    f"    -> scarica altre date con --download e credenziali CDSE valide "
+                    f"(il download nello step 2 e' fallito: 401 Unauthorized / rete assente).")
+            log(f"[4] pol '{p}': meno di 2 scene, la salto")
+            continue
+        per_pol[p] = (r[0], r[1])
+        etich_pol[p] = r[2]
+
+    primario = pols[0]
+    disp, phi_st = per_pol[primario]
+    etich = etich_pol[primario]
     coh = np.abs(np.exp(1j * phi_st).mean(0))
+    ny, nx = disp.shape[1:]
 
     x = np.arange(nx) * gr                          # asse range a terra [m]
     y = np.arange(ny) * dA                          # asse azimuth [m]
     os.makedirs(outdir, exist_ok=True)
+    extra = {}
+    for p, (dp, ph) in per_pol.items():
+        if p != primario:
+            extra[f"disp_{p}"] = dp; extra[f"phi_{p}"] = ph
+            extra[f"etich_{p}"] = np.array(etich_pol[p])
     np.savez_compressed(os.path.join(outdir, "array3d_12strati.npz"),
                         disp=disp, phi=phi_st, x=x, y=y, coh=coh.astype(np.float32),
-                        etich=np.array(etich), inc=inc, lam=lam, gr=gr, dA=dA)
-    log(f"[4] array componente verticale {disp.shape} (strati, y, x); "
-        f"vert [{disp.min():.1f},{disp.max():.1f}] mm; coh media {coh.mean():.2f}")
+                        etich=np.array(etich), inc=inc, lam=lam, gr=gr, dA=dA,
+                        **extra)
+    for p, (dp, _) in per_pol.items():
+        log(f"[4] pol '{p}': array componente verticale {dp.shape} (strati, y, x); "
+            f"vert [{dp.min():.1f},{dp.max():.1f}] mm")
+    log(f"[4] coh media (pol '{primario}'): {coh.mean():.2f}")
     dbg("strati:", etich)
 
     # figura riassuntiva degli strati
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
-    nrow = int(np.ceil(len(pairs) / 4))
+    nrow = int(np.ceil(len(etich) / 4))
     fig, axes = plt.subplots(nrow, 4, figsize=(15, 3.2 * nrow))
     for k, ax in enumerate(np.atleast_1d(axes).ravel()):
-        if k < len(pairs):
+        if k < len(etich):
             im = ax.imshow(disp[k], cmap="RdBu_r", vmin=-20, vmax=20,
                            aspect="auto", origin="lower")
             ax.set_title(etich[k], fontsize=8)
         else:
             ax.axis("off")
     fig.colorbar(im, ax=axes, shrink=0.7, label="spostamento verticale [mm]")
-    fig.suptitle(f"Step 4 — array a {len(pairs)} strati (componente verticale, DInSAR)")
+    fig.suptitle(f"Step 4 — array a {len(etich)} strati (componente verticale, "
+                 f"DInSAR, pol {primario})")
     fig.savefig(os.path.join(outdir, "step4_strati.png"), dpi=120, bbox_inches="tight")
     plt.close(fig)
-    return disp, phi_st, x, y, coh
+    return per_pol, x, y, coh
 
 
 # ----------------------------------------------------------- DEM (altezze reali)
@@ -778,7 +897,7 @@ def _fetch_dem(aoi, ny, nx, outdir, pyr_geom):
 
 
 # ===================================================================== STEP 5
-def step5_grafico_onde(disp, phi, x, y, aoi, outdir, pyr_geom,
+def step5_grafico_onde(per_pol, x, y, aoi, outdir, pyr_geom,
                        NZ=256, ZTOP=210.0, ZBOT=-200.0, STEP_X=4, STEP_Y=2,
                        WIGGLE=14.0):
     """Grafico 3D dell'array: i numeri dei n_layers strati DInSAR di ogni pixel
@@ -786,12 +905,18 @@ def step5_grafico_onde(disp, phi, x, y, aoi, outdir, pyr_geom,
     interferometrica) di una forma d'onda sviluppata in profondita' via
     anti-trasformata di Fourier su un range di profondita' SCELTO (ZTOP..ZBOT),
     non derivato dalla geometria SAR. Le onde partono dalla QUOTA REALE del
-    suolo (DEM). Analisi esplorativa: vedi nota metodologica in cima al modulo."""
+    suolo (DEM). Con piu' polarizzazioni (--pol vv,vh) l'anti-trasformata e'
+    calcolata PER OGNI pol e le tracce delle pol extra sono disegnate nelle
+    colonne intermedie (offset di STEP_X/len(pol) pixel): misure indipendenti
+    -> piu' punti in orizzontale nel 3D. Analisi esplorativa: vedi nota
+    metodologica in cima al modulo."""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     import plotly.graph_objects as go
 
+    pols = list(per_pol)
+    disp, phi = per_pol[pols[0]]
     nS, ny, nx = disp.shape
     latm = np.radians((aoi[3] + aoi[2]) / 2)
     Lx = (aoi[1] - aoi[0]) * 111320 * np.cos(latm)
@@ -807,29 +932,50 @@ def step5_grafico_onde(disp, phi, x, y, aoi, outdir, pyr_geom,
             f"({z0.max():.0f} m)")
     ZD = ZTOP - ZBOT
     z = np.linspace(0, ZD, NZ); nf = NZ // 2 + 1
-    coeff = (np.abs(disp) * np.exp(1j * phi)).astype(complex)   # (nS, ny, nx)
-    spec = np.zeros((ny * nx, nf), complex)
-    spec[:, 1:1 + nS] = coeff.reshape(nS, ny * nx).T
-    w = (np.fft.irfft(spec, n=NZ, axis=1) * NZ).reshape(ny, nx, NZ).astype(np.float32)
-    wmax = float(np.abs(w).max()) or 1.0
+    # anti-trasformata di Fourier PER OGNI polarizzazione (misure indipendenti)
+    w_pol = {}
+    for p in pols:
+        dp, ph = per_pol[p]
+        nSp = dp.shape[0]
+        coeff = (np.abs(dp) * np.exp(1j * ph)).astype(complex)   # (nSp, ny, nx)
+        spec = np.zeros((ny * nx, nf), complex)
+        spec[:, 1:1 + nSp] = coeff.reshape(nSp, ny * nx).T
+        w_pol[p] = (np.fft.irfft(spec, n=NZ, axis=1) * NZ) \
+            .reshape(ny, nx, NZ).astype(np.float32)
+    w = w_pol[pols[0]]
+    wmax = max(float(np.abs(wp).max()) for wp in w_pol.values()) or 1.0
     log(f"[5] forme d'onda (analisi esplorativa, NON tomografia Doppler del paper): "
-        f"anti-FT di {nS} armoniche -> w {w.shape}, |w|max={wmax:.1f}; "
-        f"base {Lx:.0f}x{Ly:.0f} m, profondita' {ZD:.0f} m")
+        f"anti-FT di {nS} armoniche x {len(pols)} pol {pols} -> w {w.shape}, "
+        f"|w|max={wmax:.1f}; base {Lx:.0f}x{Ly:.0f} m, profondita' {ZD:.0f} m")
 
     np.savez_compressed(os.path.join(outdir, "forme_donda.npz"),
-                        w=w, z=z, x=x_m, y=y_m, z0=z0, Lx=Lx, Ly=Ly, zdepth=ZD)
+                        w=w, z=z, x=x_m, y=y_m, z0=z0, Lx=Lx, Ly=Ly, zdepth=ZD,
+                        pol=np.array(pols),
+                        **{f"w_{p}": w_pol[p] for p in pols[1:]})
 
-    # "molle" sviluppate verso il basso dalla quota reale
-    ii = np.arange(0, ny, STEP_Y); jj = np.arange(0, nx, STEP_X)
+    # "molle" sviluppate verso il basso dalla quota reale. La pol primaria occupa
+    # le colonne x_m[0], x_m[STEP_X], ...; ogni pol extra e' INTERCALATA nelle
+    # colonne intermedie (offset STEP_X/len(pol)) -> con vv,vh i punti in
+    # orizzontale raddoppiano, e ogni traccia usa i dati del SUO pixel.
+    ii = np.arange(0, ny, STEP_Y)
     sc = WIGGLE / wmax
-    X, Y, Z, Cc = [], [], [], []
+    tracce = {}
     gap = np.array([np.nan])
-    for i in ii:
-        for j in jj:
-            wp = w[i, j]
-            X += [x_m[j] + sc * wp, gap]; Y += [np.full(NZ, y_m[i]), gap]
-            Z += [z0[i, j] - z, gap]; Cc += [np.abs(wp), gap]
-    X = np.concatenate(X); Y = np.concatenate(Y); Z = np.concatenate(Z); Cc = np.concatenate(Cc)
+    for k, p in enumerate(pols):
+        off = (k * STEP_X) // len(pols)
+        jj = np.arange(off, nx, STEP_X)
+        X, Y, Z, Cc = [], [], [], []
+        for i in ii:
+            for j in jj:
+                wp = w_pol[p][i, j]
+                X += [x_m[j] + sc * wp, gap]; Y += [np.full(NZ, y_m[i]), gap]
+                Z += [z0[i, j] - z, gap]; Cc += [np.abs(wp), gap]
+        tracce[p] = (np.concatenate(X), np.concatenate(Y),
+                     np.concatenate(Z), np.concatenate(Cc))
+    n_tracce = sum(len(np.arange((k * STEP_X) // len(pols), nx, STEP_X)) * len(ii)
+                   for k in range(len(pols)))
+    log(f"[5] tracce 3D: {n_tracce} totali su {len(pols)} polarizzazioni "
+        f"({'raddoppio orizzontale con ' + '/'.join(pols[1:]) if len(pols) > 1 else 'solo primaria'})")
 
     Xs, Ys = np.meshgrid(x_m, y_m)
     # altezza/profondita' del suolo rispetto al LIVELLO 0 (s.l.m.)
@@ -848,14 +994,19 @@ def step5_grafico_onde(disp, phi, x, y, aoi, outdir, pyr_geom,
                             showscale=False, opacity=0.25,
                             colorscale=[[0, "gray"], [1, "gray"]],
                             name="livello 0 (s.l.m.)")
-    springs = go.Scatter3d(x=X, y=Y, z=Z, mode="lines", connectgaps=False,
-                           line=dict(width=3, color=Cc, colorscale="Turbo",
-                                     colorbar=dict(title="|w|")),
-                           name=f"forme d'onda ({nS} armoniche)")
+    springs = []
+    for k, p in enumerate(pols):
+        X, Y, Z, Cc = tracce[p]
+        springs.append(go.Scatter3d(
+            x=X, y=Y, z=Z, mode="lines", connectgaps=False,
+            line=dict(width=3, color=Cc, colorscale="Turbo",
+                      colorbar=dict(title="|w|") if k == 0 else None,
+                      showscale=(k == 0)),
+            name=f"forme d'onda {p.upper()} ({per_pol[p][0].shape[0]} armoniche)"))
     ground = go.Scatter3d(x=Xs.ravel(), y=Ys.ravel(), z=z0.ravel(), mode="markers",
                           marker=dict(size=1.2, color="red"), name="suolo (DEM)",
                           text=txt, hoverinfo="text")
-    fig = go.Figure([plane, zero_plane, springs, ground])
+    fig = go.Figure([plane, zero_plane, *springs, ground])
     log(f"[5] altezza max del suolo dal livello 0: {h_suolo.max():.0f} m; "
         f"onde sviluppate fino a quota {ZBOT:.0f} m s.l.m. "
         f"(= {abs(ZBOT):.0f} m di profondita' sotto il livello 0)")
@@ -874,12 +1025,16 @@ def step5_grafico_onde(disp, phi, x, y, aoi, outdir, pyr_geom,
     # anteprima statica + B-scan
     figm = plt.figure(figsize=(9, 8)); ax = figm.add_subplot(111, projection="3d")
     ax.plot_surface(Xs, Ys, z0, cmap="terrain", alpha=0.4, linewidth=0)
-    for i in ii:
-        for j in jj:
-            ax.plot(x_m[j] + sc * w[i, j], np.full(NZ, y_m[i]), z0[i, j] - z, lw=0.6)
+    for k, p in enumerate(pols):
+        off = (k * STEP_X) // len(pols)
+        for i in ii:
+            for j in np.arange(off, nx, STEP_X):
+                ax.plot(x_m[j] + sc * w_pol[p][i, j], np.full(NZ, y_m[i]),
+                        z0[i, j] - z, lw=0.6)
     ax.set_xlabel("x E-W [m]"); ax.set_ylabel("y N-S [m]"); ax.set_zlabel("quota s.l.m. [m]")
     ax.set_zlim(ZBOT, ZTOP); ax.set_box_aspect((Lx, Ly, ZD))
-    ax.set_title(f"Step 5 — forme d'onda dalla quota reale ({nS} armoniche)")
+    ax.set_title(f"Step 5 — forme d'onda dalla quota reale "
+                 f"({nS} armoniche, pol {'/'.join(pols)})")
     figm.savefig(os.path.join(outdir, "step5_forme_donda_3d.png"), dpi=120,
                  bbox_inches="tight")
     plt.close(figm)
@@ -894,54 +1049,71 @@ def step5_grafico_onde(disp, phi, x, y, aoi, outdir, pyr_geom,
     figb.savefig(os.path.join(outdir, "step5_bscan.png"), dpi=120, bbox_inches="tight")
     plt.close(figb)
     log(f"[5] salvati step5_forme_donda_3d.html/.png, step5_bscan.png")
-    return w, z, x_m, y_m, z0, Lx, Ly, ZD, ZTOP, ZBOT
+    return w_pol, z, x_m, y_m, z0, Lx, Ly, ZD, ZTOP, ZBOT
 
 
 # ===================================================================== STEP 6
-def step6_variazioni(w, z, x_m, y_m, z0, Lx, Ly, ZD, ZTOP, ZBOT, outdir,
+def step6_variazioni(w_pol, z, x_m, y_m, z0, Lx, Ly, ZD, ZTOP, ZBOT, outdir,
                      DMIN=0.035, DMAX=0.06):
     """Punti dove le forme d'onda (esplorative, step 5) variano in FREQUENZA
     (=> proxy di densita'): frequenza istantanea lungo la profondita' (Hilbert)
     -> |d(freq)/dz|; i punti nella banda scelta sono disegnati in 3D alle
-    ALTEZZE REALI (quota DEM - profondita'). Vedi nota metodologica in cima al
-    modulo: e' un'analisi ispirata al lessico Biondi-Malanga ma non e' la loro
-    tomografia Doppler a sub-aperture."""
+    ALTEZZE REALI (quota DEM - profondita'). Con piu' polarizzazioni (--pol
+    vv,vh) i punti di TUTTE le pol vengono uniti: ogni pol e' una misura
+    indipendente, quindi la nuvola 3D si infittisce. Vedi nota metodologica in
+    cima al modulo: e' un'analisi ispirata al lessico Biondi-Malanga ma non e'
+    la loro tomografia Doppler a sub-aperture."""
     from scipy.signal import hilbert
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
     import plotly.graph_objects as go
 
-    ny, nx, nz = w.shape
+    if not isinstance(w_pol, dict):                 # retro-compatibilita'
+        w_pol = {"vv": w_pol}
+    pols = list(w_pol)
     dz = z[1] - z[0]
-    an = hilbert(w, axis=2)
-    inst_f = np.gradient(np.unwrap(np.angle(an), axis=2), dz, axis=2) / (2 * np.pi)
-    dfreq = np.abs(np.gradient(inst_f, dz, axis=2))
-    ii, jj, kk = np.where((dfreq > DMIN) & (dfreq <= DMAX))
-    px = x_m[jj]; py = y_m[ii]; pz = z0[ii, jj] - z[kk]; pv = dfreq[ii, jj, kk]
-    m = (pz >= ZBOT) & (pz <= ZTOP)
-    px, py, pz, pv = px[m], py[m], pz[m], pv[m]
+    px, py, pz, pv, ppol = [], [], [], [], []
+    tot_campioni = 0
+    for p in pols:
+        w = w_pol[p]
+        ny, nx, nz = w.shape
+        an = hilbert(w, axis=2)
+        inst_f = np.gradient(np.unwrap(np.angle(an), axis=2), dz, axis=2) / (2 * np.pi)
+        dfreq = np.abs(np.gradient(inst_f, dz, axis=2))
+        tot_campioni += dfreq.size
+        ii, jj, kk = np.where((dfreq > DMIN) & (dfreq <= DMAX))
+        qx = x_m[jj]; qy = y_m[ii]; qz = z0[ii, jj] - z[kk]; qv = dfreq[ii, jj, kk]
+        m = (qz >= ZBOT) & (qz <= ZTOP)
+        qx, qy, qz, qv = qx[m], qy[m], qz[m], qv[m]
+        log(f"[6] pol '{p}': banda densita' {DMIN}<|Δfreq|<={DMAX}: {len(qx)} punti "
+            f"su {dfreq.size} (max {dfreq.max():.4f})")
+        px.append(qx); py.append(qy); pz.append(qz); pv.append(qv)
+        ppol += [p] * len(qx)
+    px = np.concatenate(px); py = np.concatenate(py)
+    pz = np.concatenate(pz); pv = np.concatenate(pv)
+    ppol = np.array(ppol)
     # altezza dal livello 0 (quota>0) e profondita' dal livello 0 (quota<0)
     altezza = np.where(pz >= 0, pz, 0.0)
     profondita = np.where(pz < 0, -pz, 0.0)
-    log(f"[6] banda densita' {DMIN}<|Δfreq|<={DMAX}: {len(px)} punti su {dfreq.size} "
-        f"(max {dfreq.max():.4f})")
+    log(f"[6] totale {len(px)} punti su {tot_campioni} campioni "
+        f"({len(pols)} polarizzazioni: {pols})")
     n_sopra = int((pz >= 0).sum()); n_sotto = int((pz < 0).sum())
     log(f"[6] rispetto al livello 0: {n_sopra} punti sopra (altezza max "
         f"{altezza.max():.0f} m), {n_sotto} punti sotto (profondita' max "
         f"{profondita.max():.0f} m)")
     np.savez_compressed(os.path.join(outdir, "variazioni_frequenza.npz"),
-                        px=px, py=py, pz=pz, pv=pv,
+                        px=px, py=py, pz=pz, pv=pv, pol=ppol,
                         altezza_dal_livello0=altezza, profondita_dal_livello0=profondita,
                         dmin=DMIN, dmax=DMAX)
 
-    # hover: quota s.l.m. + altezza/profondita' dal livello 0 per ogni punto
+    # hover: quota s.l.m. + altezza/profondita' dal livello 0 + pol per ogni punto
     txt = []
-    for a, b, c, d in zip(px, py, pz, pv):
+    for a, b, c, d, q in zip(px, py, pz, pv, ppol):
         rel = (f"altezza dal livello 0: {c:.0f} m" if c >= 0
                else f"profondita' dal livello 0: {-c:.0f} m")
         txt.append(f"x={a:.0f} m, y={b:.0f} m<br>quota {c:+.0f} m s.l.m.<br>"
-                   f"{rel}<br>|Δfreq|={d:.4f}")
+                   f"{rel}<br>|Δfreq|={d:.4f}<br>pol {q.upper()}")
 
     Xg, Yg = np.meshgrid(x_m, y_m)
     ground = go.Scatter3d(x=Xg.ravel(), y=Yg.ravel(), z=z0.ravel(), mode="markers",
@@ -1120,7 +1292,11 @@ def main():
                     default=None, help="angolo SE lat (DMS)")
     ap.add_argument("--se-lon", nargs=4, metavar=("D", "M", "S", "H"),
                     default=None, help="angolo SE lon (DMS)")
-    ap.add_argument("--pol", default="vv")
+    ap.add_argument("--pol", default="vv,vh",
+                    help="polarizzazioni, separate da virgola (default vv,vh): la "
+                         "prima e' la primaria (conteggi/track filter); le altre "
+                         "aggiungono forme d'onda indipendenti -> piu' punti in "
+                         "orizzontale nei grafici 3D. Solo VV: --pol vv")
     ap.add_argument("--layers", type=int, default=12, help="numero di strati (>=12)")
     ap.add_argument("--start", default="2025-01-01", help="data inizio ricerca YYYY-MM-DD")
     ap.add_argument("--end", default="2026-06-25", help="data fine ricerca YYYY-MM-DD")
@@ -1214,12 +1390,12 @@ def main():
         boxpath = fallback_box
 
     if steps & {4, 5, 6}:
-        disp, phi, x, y, coh = step4_array_12(boxpath, a.layers, outdir)
+        per_pol, x, y, coh = step4_array_12(boxpath, a.layers, outdir)
         if steps & {5, 6}:
-            (w, z, x_m, y_m, z0, Lx, Ly, ZD, ZTOP, ZBOT) = \
-                step5_grafico_onde(disp, phi, x, y, aoi, outdir, pyr_geom)
+            (w_pol, z, x_m, y_m, z0, Lx, Ly, ZD, ZTOP, ZBOT) = \
+                step5_grafico_onde(per_pol, x, y, aoi, outdir, pyr_geom)
             if 6 in steps:
-                step6_variazioni(w, z, x_m, y_m, z0, Lx, Ly, ZD, ZTOP, ZBOT, outdir,
+                step6_variazioni(w_pol, z, x_m, y_m, z0, Lx, Ly, ZD, ZTOP, ZBOT, outdir,
                                  DMIN=a.dmin, DMAX=a.dmax)
 
     if a.vera_tomografia:
