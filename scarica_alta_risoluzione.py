@@ -33,9 +33,11 @@ Biondi & Malanga, "SAR Doppler Tomography ... Great Pyramid of Giza"):
     c) Sentinel-1 IW SLC (~2.3 x 14.1 m in azimut): il fallback gia' usato
        dalla pipeline (piramide_unificato.py).
 
-  Se il download HTTP dal CDSE fallisce del tutto, come ultima spiaggia il
-  programma cerca il prodotto per nome su Academic Torrents (dataset
-  scientifici distribuiti via BitTorrent) e lo scarica con libtorrent.
+  Se il download HTTP dal CDSE fallisce del tutto, come fallback il
+  programma cerca il prodotto per nome anche su Google Drive (dork
+  "site:drive.google.com", nessuna API key richiesta) e, in ultima
+  spiaggia, su Academic Torrents & co. (dataset scientifici distribuiti
+  via BitTorrent) scaricandolo con libtorrent.
 
 USO:
   python scarica_alta_risoluzione.py --pyramid cheope --dry-run
@@ -43,6 +45,8 @@ USO:
   python scarica_alta_risoluzione.py --coords-file punti.txt --download
   python scarica_alta_risoluzione.py --torrent-search "S1A IW SLC 20250321"
   python scarica_alta_risoluzione.py --torrent-search "..." --download
+  python scarica_alta_risoluzione.py --gdrive-search "S1A IW SLC 20250321"
+  python scarica_alta_risoluzione.py --gdrive-search "..." --download
   (credenziali: --cdse-user/--cdse-pass oppure env CDSE_USER / CDSE_PASS)
 
   punti.txt: una coppia "lat lon" (o "lat,lon") per riga; l'AOI e' il
@@ -489,6 +493,118 @@ def fallback_torrent(prodotti, outdir, magnet=None):
     return ok
 
 
+# =================================================== FALLBACK GOOGLE DRIVE
+# Alcuni prodotti (o rielaborazioni degli stessi) circolano condivisi anche
+# su Google Drive. Google non offre un'API di ricerca pubblica senza chiave,
+# quindi si usa lo stesso "dork" che si digiterebbe a mano in un motore di
+# ricerca, `site:drive.google.com <query>`, interrogando un endpoint che
+# risponde in HTML semplice (DuckDuckGo, senza JS ne' API key) e estraendo i
+# link a drive.google.com dalla pagina dei risultati.
+
+_GDRIVE_LINK_RE = re.compile(
+    r"https?://drive\.google\.com/(?:file/d/|open\?id=|uc\?id=)([\w-]{15,})")
+
+
+def _ddg_html_search(query, timeout=60):
+    """Ricerca sull'endpoint HTML di DuckDuckGo (nessuna API key) e ritorna
+    la lista dei link presenti nella pagina risultati."""
+    url = "https://html.duckduckgo.com/html/?" + urllib.parse.urlencode({"q": query})
+    headers = {"User-Agent": "Mozilla/5.0 (piramid-v2/1.0)"}
+    req = urllib.request.Request(url, headers=headers)
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        html = r.read().decode("utf-8", errors="replace")
+    # DDG avvolge l'URL reale in un redirect "uddg=<url-encoded>"
+    link = [urllib.parse.unquote(g) for g in re.findall(r'uddg=([^&"]+)', html)]
+    # fallback nel caso cambi il markup del redirect: href diretti
+    link += re.findall(r'href="(https?://drive\.google\.com/[^"]+)"', html)
+    return link
+
+
+def gdrive_cerca(query):
+    """Cerca `query` su Google Drive col dork site:drive.google.com e
+    ritorna [(file_id, url)] dei file trovati, senza duplicati."""
+    q = f"site:drive.google.com {query}"
+    log(f"    [gdrive] ricerca '{q}' (DuckDuckGo)...")
+    try:
+        link = _ddg_html_search(q)
+    except Exception as ex:
+        log(f"    ! ricerca Google Drive fallita ({ex})")
+        return []
+    trovati = {}
+    for u in link:
+        m = _GDRIVE_LINK_RE.search(u)
+        if m:
+            trovati[m.group(1)] = u
+    out = list(trovati.items())
+    for fid, u in out:
+        log(f"    [gdrive] candidato: {u}")
+    return out
+
+
+def gdrive_scarica(file_id, dest):
+    """Scarica un file pubblico da Google Drive dato il suo file id,
+    gestendo la pagina interstiziale di conferma per i file troppo grandi
+    per la scansione antivirus di Drive."""
+    base = "https://drive.google.com/uc?export=download"
+    headers = {"User-Agent": "Mozilla/5.0 (piramid-v2/1.0)"}
+    req = urllib.request.Request(f"{base}&id={file_id}", headers=headers)
+    with urllib.request.urlopen(req, timeout=120) as r:
+        ctype = r.headers.get("Content-Type", "")
+        cookies = r.headers.get_all("Set-Cookie") or []
+        if "text/html" not in ctype:
+            with open(dest, "wb") as fo:
+                while True:
+                    chunk = r.read(1 << 20)
+                    if not chunk:
+                        break
+                    fo.write(chunk)
+            return True
+        html = r.read().decode("utf-8", errors="replace")
+    m = (re.search(r"confirm=([0-9A-Za-z_-]+)", html) or
+         re.search(r'name="confirm"\s+value="([0-9A-Za-z_-]+)"', html))
+    confirm = m.group(1) if m else "t"
+    headers2 = dict(headers)
+    cookie_hdr = "; ".join(c.split(";")[0] for c in cookies)
+    if cookie_hdr:
+        headers2["Cookie"] = cookie_hdr
+    url2 = f"{base}&id={file_id}&confirm={confirm}"
+    req2 = urllib.request.Request(url2, headers=headers2)
+    with urllib.request.urlopen(req2, timeout=1800) as r:
+        with open(dest, "wb") as fo:
+            while True:
+                chunk = r.read(1 << 20)
+                if not chunk:
+                    break
+                fo.write(chunk)
+    return True
+
+
+def fallback_gdrive(prodotti, outdir):
+    """Come fallback_torrent ma cerca i prodotti su Google Drive (dork
+    site:drive.google.com) e li scarica via HTTP diretto."""
+    log("[gdrive] fallback Google Drive (ricerca site:drive.google.com)")
+    ok = False
+    for p in prodotti:
+        dest = os.path.join(outdir, p["Name"].replace(".SAFE", "") + ".zip")
+        trovato = False
+        for q in _query_varianti(p["Name"]):
+            for fid, u in gdrive_cerca(q):
+                log(f"[gdrive] provo {u}")
+                try:
+                    if gdrive_scarica(fid, dest):
+                        ok = trovato = True
+                        break
+                except Exception as ex:
+                    log(f"    ! download Google Drive fallito ({ex})")
+            if trovato:
+                break
+        if not trovato:
+            log(f"    nessun file Google Drive trovato per {p['Name']}")
+    if not ok:
+        log("[gdrive] nessun prodotto recuperato via Google Drive.")
+    return ok
+
+
 # ======================================================================= MAIN
 def main():
     ap = argparse.ArgumentParser(
@@ -516,6 +632,10 @@ def main():
     ap.add_argument("--torrent-search", default=None, metavar="QUERY",
                     help="cerca QUERY negli indici della rete torrent, stampa i "
                          "magnet trovati ed esce (con --download scarica il migliore)")
+    ap.add_argument("--gdrive-search", default=None, metavar="QUERY",
+                    help="cerca QUERY su Google Drive (site:drive.google.com), "
+                         "stampa i link trovati ed esce (con --download scarica "
+                         "il migliore)")
     args = ap.parse_args()
 
     # ---- modalita' ricerca torrent pura (non serve il catalogo CDSE) -------
@@ -532,6 +652,23 @@ def main():
             nome, mg, _ = candidati[0]
             log(f"\n[torrent] scarico il candidato migliore: {nome}")
             torrent_scarica(mg, args.outdir)
+        return
+
+    # ---- modalita' ricerca Google Drive pura (non serve il catalogo CDSE) --
+    if args.gdrive_search:
+        log(f"[gdrive] ricerca '{args.gdrive_search}' (site:drive.google.com)...")
+        candidati = gdrive_cerca(args.gdrive_search)
+        if not candidati:
+            log("[gdrive] nessun risultato pertinente")
+            return
+        for fid, u in candidati:
+            log(f"\n  {u}")
+        if args.download:
+            os.makedirs(args.outdir, exist_ok=True)
+            fid, u = candidati[0]
+            dest = os.path.join(args.outdir, f"{fid}.zip")
+            log(f"\n[gdrive] scarico il candidato migliore: {u}")
+            gdrive_scarica(fid, dest)
         return
 
     aoi = leggi_coordinate(args)
@@ -625,9 +762,16 @@ def main():
         if not ok:
             falliti.append(p)
 
-    # ---- 4) fallback torrent per cio' che non e' arrivato via HTTP ---------
+    # ---- 4) fallback per cio' che non e' arrivato via HTTP diretto ---------
+    # prima si prova Google Drive (spesso piu' veloce/affidabile di un
+    # torrent), poi cio' che manca ancora passa al fallback BitTorrent
     if falliti or args.magnet:
-        fallback_torrent(falliti, args.outdir, magnet=args.magnet)
+        if falliti:
+            fallback_gdrive(falliti, args.outdir)
+            falliti = [p for p in falliti if not os.path.exists(
+                os.path.join(args.outdir, p["Name"].replace(".SAFE", "") + ".zip"))]
+        if falliti or args.magnet:
+            fallback_torrent(falliti, args.outdir, magnet=args.magnet)
 
     n_ok = len(piano) - len(falliti)
     log(f"[fine] scaricati {n_ok}/{len(piano)} prodotti in {args.outdir}")

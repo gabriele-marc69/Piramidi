@@ -66,7 +66,7 @@ I grafici 3D sono salvati come HTML Plotly interattivi (ruota/zoom nel browser).
 GitHub non li renderizza nella vista del repo, quindi aprili tramite un proxy che li
 serve come pagina:
 
-- 👁️ **Step 6 — variazioni di frequenza/densità (3D):**
+- 👁️ **Step 6 — PIENO/VUOTO per frequenza istantanea (3D):**
   [apri nel browser](https://raw.githack.com/gabriele-marc69/Piramidi/main/step6_variazioni_3d.html)
   · [pagina GitHub Pages](https://gabriele-marc69.github.io/Piramidi/step6_variazioni_3d.html)
   *(quest'ultima attiva dopo aver abilitato GitHub Pages su branch `main`/root)*
@@ -100,8 +100,11 @@ serve come pagina:
 2. Ritaglia l'area dai file `.tiff` (geolocalizzazione box via GCP).
 3. Genera un array 3D `(x, y, strati)` degli spostamenti ricavati dai `.tiff`.
 4. Parametrizza gli strati `y` come funzioni di Fourier stirate su un range di 1000 m.
-5. Disegna un grafico 3D dinamico delle funzioni di Fourier generate.
-6. Estrae i punti con variazione di frequenza (e quindi di densità).
+5. Disegna un grafico 3D dinamico delle funzioni di Fourier generate (colore =
+   frequenza istantanea: PIENO/alta frequenza, VUOTO/bassa frequenza).
+6. Per ogni pixel dell'area selezionata sceglie il campione con inviluppo massimo
+   e lo classifica PIENO/VUOTO in base alla sua frequenza istantanea (un punto
+   per pixel, non un sottoinsieme filtrato).
 
 ## Requisiti
 

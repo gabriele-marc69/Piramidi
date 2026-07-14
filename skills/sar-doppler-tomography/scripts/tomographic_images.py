@@ -118,7 +118,9 @@ def main():
     if a.zmax > z_amb * 1.01:
         print(f"  WARNING: zmax > z_amb: depths beyond {z_amb:.1f} m alias!")
 
-    V = np.zeros((H, W, len(z))); n = np.zeros((H, W))
+    # media incoerente multi-scena: V = somma |h| per scena / n, V2 = somma |h|^2
+    # -> deviazione standard tra scene = stabilita' dei picchi (rumore ~ 1/sqrt(n))
+    V = np.zeros((H, W, len(z))); V2 = np.zeros((H, W, len(z))); n = np.zeros((H, W))
     for s, chip in enumerate(chips):
         chip = chip[:H, :W]
         subs = [None if np.abs(chip[:, c]).max() == 0
@@ -131,11 +133,17 @@ def main():
                               for m in range(a.klook)], complex)
                 if np.abs(Y).max() == 0:
                     continue
-                V[i, c] += np.abs(A.conj().T @ Y); n[i, c] += 1
+                h = np.abs(A.conj().T @ Y)
+                V[i, c] += h; V2[i, c] += h ** 2; n[i, c] += 1
         print(f"  scene {s + 1}/{len(chips)}")
-    V /= np.maximum(n[..., None], 1)
+    n3 = np.maximum(n[..., None], 1)
+    V /= n3
+    Vstd = np.sqrt(np.maximum(V2 / n3 - V ** 2, 0.0))
     Vn = V / (V.max() + 1e-12)
     np.save(os.path.join(a.outdir, "volume_tomografico.npy"), V)
+    np.save(os.path.join(a.outdir, "volume_tomografico_std.npy"), Vstd)
+    print(f"incoherent multi-scene average over n={int(n.max())} scenes "
+          f"(noise ~1/sqrt(n) = {1 / np.sqrt(max(n.max(), 1)):.2f}x)")
 
     dA = g["dA"]; gr = g["dR"] / np.sin(np.radians(g["incid_mid"]))
     ew = np.arange(W) * gr; ns = np.arange(H) * dA
@@ -172,8 +180,27 @@ def main():
     fig.suptitle("Horizontal slices of the tomographic volume")
     fig.savefig(f"{a.outdir}/slice_orizzontali.png", dpi=150); plt.close(fig)
 
-    quota = z[np.argmax(V, axis=2)]
-    fig, axs = plt.subplots(1, 2, figsize=(12, 4.2))
+    # stabilita' multi-scena: CV = std/mean tra scene (basso = picco riproducibile,
+    # alto = sopravvissuto alla media ma non coerente tra le scene)
+    cv = Vstd / (V + 1e-12)
+    fig, axs = plt.subplots(1, 2, figsize=(13, 4))
+    im0 = axs[0].imshow(db(Vn[ir].T), origin="lower", aspect="auto", cmap="inferno",
+                        extent=[0, ew[-1], 0, a.zmax])
+    axs[0].set_title(f"Mean reflectivity (n={int(n.max())} scenes) — azimuth row {ir}")
+    axs[0].set_xlabel("ground range [m]"); axs[0].set_ylabel("depth z [m]")
+    fig.colorbar(im0, ax=axs[0], label="reflectivity [dB]")
+    im1 = axs[1].imshow(cv[ir].T, origin="lower", aspect="auto", cmap="viridis_r",
+                        vmin=0, vmax=1.5, extent=[0, ew[-1], 0, a.zmax])
+    axs[1].set_title("Cross-scene coefficient of variation (std/mean)")
+    axs[1].set_xlabel("ground range [m]"); axs[1].set_ylabel("depth z [m]")
+    fig.colorbar(im1, ax=axs[1], label="CV (low = stable)")
+    fig.tight_layout(); fig.savefig(f"{a.outdir}/stabilita_multiscena.png", dpi=150)
+    plt.close(fig)
+
+    ipk = np.argmax(V, axis=2)
+    quota = z[ipk]
+    cv_picco = np.take_along_axis(cv, ipk[..., None], axis=2)[..., 0]
+    fig, axs = plt.subplots(1, 3, figsize=(16, 4.2))
     im0 = axs[0].imshow(quota, origin="upper", aspect="auto", cmap="turbo",
                         extent=[0, ew[-1], ns[-1], 0])
     axs[0].set_title("Tomographic height (max |h(z)|)")
@@ -183,10 +210,16 @@ def main():
                         extent=[0, ew[-1], ns[-1], 0])
     axs[1].set_title("Peak intensity"); axs[1].set_xlabel("range [m]")
     fig.colorbar(im1, ax=axs[1], label="[dB]")
+    im2 = axs[2].imshow(cv_picco, origin="upper", aspect="auto", cmap="viridis_r",
+                        vmin=0, vmax=1.5, extent=[0, ew[-1], ns[-1], 0])
+    axs[2].set_title("Peak cross-scene CV (low = stable)")
+    axs[2].set_xlabel("range [m]")
+    fig.colorbar(im2, ax=axs[2], label="std/mean")
     fig.tight_layout(); fig.savefig(f"{a.outdir}/mappa_quota.png", dpi=150); plt.close(fig)
 
     print(f"\nSaved in {a.outdir}/: sezione_range_quota.png, sezione_azimuth_quota.png, "
-          "slice_orizzontali.png, mappa_quota.png, volume_tomografico.npy")
+          "slice_orizzontali.png, mappa_quota.png, stabilita_multiscena.png, "
+          "volume_tomografico.npy, volume_tomografico_std.npy")
 
 
 if __name__ == "__main__":

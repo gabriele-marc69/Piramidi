@@ -2,61 +2,63 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-## What this is
+## What this repo is
 
-Python pipeline for SAR micro-Doppler tomography and DInSAR micro-displacement of the Giza pyramids from Sentinel-1 IW SLC stacks, inspired by Biondi & Malanga (Remote Sens. 2022, 14, 5231). Code comments, CLI help, and output messages are in **Italian** — keep that convention.
-
-There is no build system, test suite, or linter. Verification is done by running the pipeline steps against local data and a synthetic model (see below).
+Python pipeline for SAR micro-Doppler tomography and DInSAR micro-displacement of the Giza pyramids (Cheope/Khufu and Kefren/Khafre) from open Sentinel-1 IW SLC stacks, inspired by Biondi & Malanga (Remote Sens. 2022, 14, 5231; arXiv:2206.09200). Code comments, docstrings, CLI help, and console output are in **Italian** — keep new code consistent with that.
 
 ## Commands
+
+No test suite, linter, or build system is configured. Development = running the pipeline scripts directly.
 
 ```bash
 pip install -r requirements.txt   # numpy, scipy, matplotlib, rasterio, plotly (Python >= 3.10)
 
-# Full pipeline (search + download + steps 1-6); needs CDSE_USER/CDSE_PASS env vars
+# Full pipeline (search + download + processing). --pyramid picks the default
+# coordinate box and output dir (goal_out_Cheope/ or goal_out_kefren/):
 python piramide_unificato.py --pyramid cheope --download
 python piramide_unificato.py --pyramid kefren --download
 
-# Processing only, on data already in <outdir>/stack_slc/ (no network)
+# Processing only, on data already in the output dir's stack_slc/ (no credentials needed):
 python piramide_unificato.py --pyramid kefren --steps 3-6
 
-# Paper-faithful Doppler tomography (steering matrix, h(z)=A^H*Y) in addition to chosen steps
+# Paper-faithful Doppler tomography (steering matrix, h(z)=A^H*Y) in addition to chosen steps:
 python piramide_unificato.py --pyramid kefren --steps 3 --vera-tomografia
 
-# Higher-resolution product search/download (Stripmap SLC > on-demand L0 > IW SLC fallback)
-python scarica_alta_risoluzione.py --pyramid cheope --dry-run
-scarica_dati.bat [cheope|kefren]   # Windows wrapper; caches credentials in .cdse.env (gitignored)
-
-# Standalone box extraction from already-downloaded TIFFs
-python skills/sentinel1-slc-reader/scripts/extract_box.py --stack <stack_slc> --nw ... --se ... --pol vv --out box.npz
-
-# Synthetic self-test of the tomographic inversion (reflectors at known depths)
-python skills/sar-doppler-tomography/scripts/sar_tomo.py
+# Windows wrapper (defaults: kefren, --steps 4-6, prompts for/caches CDSE credentials in .cdse.env):
+piramide_unificato.bat [cheope|kefren] [extra args passed through]
 ```
 
-Custom AOI: pass `--nw/--nw-lon/--se/--se-lon` (DMS, 4 tokens each: D M S H) instead of `--pyramid`. Other key flags: `--pol vv,vh` (first is primary), `--layers`, `--start/--end`, `--dmin/--dmax` (step-6 density band), `--zmax/--klook/--ovs` (tomography), `--no-track-filter`, `--debug`.
+Standalone skill scripts (each runnable on its own):
+
+```bash
+python skills/sentinel1-slc-reader/scripts/extract_box.py --stack <stack_slc> --nw D M S H D M S H --se D M S H D M S H --pol vv --out box.npz
+python skills/sar-doppler-tomography/scripts/tomographic_images.py --stack <stack_slc> --outdir tomo_img --zmax 8.5 --klook 12 --ovs 4
+python skills/sar-dinsar-microdisplacement/scripts/dinsar.py --npz box.npz
+```
+
+Download credentials (step 2 only) come from env vars `CDSE_USER` / `CDSE_PASS` (free account at dataspace.copernicus.eu) or `--cdse-user`/`--cdse-pass`. Never hardcode or commit them; `.cdse.env` is gitignored.
 
 ## Architecture
 
-Almost everything lives in `piramide_unificato.py` (~1300 lines), a single 6-step pipeline selected via `--steps`; the `PRESETS` dict at the top defines the per-pyramid AOI boxes and real geometry (`base_m`/`h_m` — used as the internal metric reference; wrong values falsify heights):
+- **`piramide_unificato.py`** — the single entry point (~2900 lines), a 6-step pipeline selected with `--steps` (e.g. `1-6`, `3,5`):
+  1. OData search on Copernicus Data Space (CDSE) for Sentinel-1 IW SLC products containing the coordinate box
+  2. Resumable download; extracts measurement TIFFs + annotation.xml from `.SAFE` zips (also reuses zips already downloaded by `scarica_alta_risoluzione.py` in `alta_risoluzione_out/`)
+  3. Box extraction via product GCPs → co-registered complex stack `(n_scene, az, rng)` → `box.npz`
+  4. DInSAR: interferometric phase → vertical displacement layers `(n_strati, ny, nx)`
+  5. Layers treated as Fourier coefficients of a depth-stretched waveform per pixel; 3-D Plotly "springs" colored by instantaneous (Hilbert) frequency
+  6. Per-pixel PIENO/VUOTO (solid/void) classification at real DEM heights
+  Pyramid presets (`PRESETS` dict: box DMS coordinates, output dir, real base/height geometry) live at the top of the file; the known internal structures of Khufu used as visual overlay are hardcoded there too.
+- **`skills/`** — three reusable skills (anthropics/skills format, `SKILL.md` + `scripts/`) mirroring the pipeline stages: `sentinel1-slc-reader` (step 3), `sar-dinsar-microdisplacement` (step 4), `sar-doppler-tomography` (the paper's actual method, invoked by `--vera-tomografia`). The `sar_tomo.py` library includes a synthetic forward model (`genera_Y_sintetico`) that validates the tomographic inversion against reflectors at known depths — use it to verify changes to the tomography chain.
+- **`scarica_alta_risoluzione.py`** — standalone search/download for the highest-resolution SLC products on CDSE (Stripmap SLC → on-demand production from RAW L0 → IW SLC fallback). `scarica_dati.bat` wraps it.
+- **`cerca_cosmo_skymed.py`** — searches public catalogs (Zenodo, OpenAIRE, Brave/Bing web APIs) for pointers to COSMO-SkyMed material. It deliberately does NOT download restricted scenes or bypass access controls/CAPTCHAs — keep it that way.
+- **Output dirs** `goal_out_Cheope/` and `goal_out_kefren/` hold per-pyramid data: `stack_slc/` (input TIFFs), `box.npz`, and `unificato/` (results). Raw data, `.npz`, `.png`, `.html` are all gitignored (SAFE products are ~8 GB each).
 
-1. **step1_cerca** — OData search on Copernicus Data Space (CDSE) for SLC products containing the AOI.
-2. **step2_scarica** — resumable download (retries, token refresh per attempt, waits for network up to 2h); extracts measurement TIFFs + annotation XMLs from the `.SAFE` zips into `<outdir>/stack_slc/`.
-3. **step3_estrai_box** — geolocates the box via product GCPs, extracts a co-registered complex chip stack `(n_scene, az, rng)` per polarization → `box.npz`; filters scenes to the dominant track.
-4. **step4_array_12** — classic DInSAR: interferograms between acquisition pairs → N-layer LOS→vertical displacement array `(n_strati, ny, nx)`.
-5. **step5_grafico_onde** — treats the N layers as Fourier coefficients of a depth waveform stretched over an arbitrary range; 3D plotly surface + "springs". VH traces are interleaved between VV columns.
-6. **step6_variazioni** — Hilbert instantaneous frequency → points of frequency (density) variation, plotted at real heights (Copernicus DEM + pyramid overlay).
+## Critical methodological distinction
 
-**Critical methodological distinction** (documented in the module docstring and README): steps 5–6 are an *exploratory* extension, NOT the paper's Doppler sub-aperture tomography. The paper-faithful method (steering matrix, `h(z)=Aᴴ·Y`, Kz from synthesized orthogonal baselines) lives in `skills/sar-doppler-tomography/scripts/` and is invoked via `--vera-tomografia` (`step_vera_tomografia` calls `tomographic_images.py`). Preserve this distinction in any docs or output text; never present step 5–6 depths as physically validated. Physical limit to respect: few tomographic looks on a small box ⇒ ambiguity height `z_amb ≈ 8.5 m`, so keep `--zmax` below it.
+Steps 5–6 of `piramide_unificato.py` are an **exploratory** analysis (DInSAR layers reinterpreted as Fourier coefficients over an arbitrary depth range + Hilbert instantaneous frequency) inspired by the paper's vocabulary but **not** its method. The paper-coherent Doppler tomography (sub-apertures, steering matrix, `h(z)=Aᴴ·Y`) is only in `skills/sar-doppler-tomography/` / `--vera-tomografia`. Physical limit stated throughout the repo: the open Sentinel-1 stack gives few tomographic looks → ambiguity height `z_amb ≈ 8.5 m`, so pyramid-scale absolute depth is NOT recoverable; depths alias modulo `z_amb`. Any docs, figures, or write-ups you produce must preserve these honest disclaimers — do not present the exploratory output as validated depth measurement or as evidence of undiscovered structures.
 
-`scarica_alta_risoluzione.py` is a separate search/download tool that prefers higher-resolution products (Stripmap SLC, then on-demand production from L0 RAW, then IW SLC; Academic Torrents as last resort). Its `PIRAMIDI` presets must stay consistent with `PRESETS` in `piramide_unificato.py`.
+## Conventions
 
-`skills/` contains three reusable skills (anthropics/skills format, `SKILL.md` + `scripts/`) mirroring pipeline stages: `sentinel1-slc-reader` (box extraction), `sar-doppler-tomography` (paper inversion + synthetic validation), `sar-dinsar-microdisplacement` (LOS micro-displacements). A fourth knowledge skill, `biondi-malanga-sar-tomography`, is available in the Claude Code session for the paper's method/notation.
-
-## Conventions and constraints
-
-- Only SLC products are usable (they keep phase); GRD is amplitude-only and useless here. Each `.SAFE` is ~8 GB.
-- Raw data (`.SAFE`, `.tiff`, `.zip`), intermediate `.npz`, and renders (`.png`, `.html`) are gitignored; outputs go to `goal_out_Cheope/` or `goal_out_kefren/` (subfolder `unificato/`), and `alta_risoluzione_out/` for the high-res downloader.
-- CDSE credentials come from `CDSE_USER`/`CDSE_PASS` env vars or `--cdse-user/--cdse-pass`; never hardcode them (a past commit removed hardcoded ones). `.cdse.env` is local-only.
-- matplotlib/scipy/plotly are imported lazily inside the steps that need them so steps 1–2 run on a machine with only numpy.
-- The reference PDFs in the repo root (arXiv 2206.09200, 2208.00811, 2007.05326) are the source papers for the method.
+- Steps 1–2 must run on a machine without scipy/matplotlib/plotly: heavy imports are lazy, inside the steps that use them. Keep it that way when editing.
+- Coordinates are passed as DMS quadruples (`--nw 29 58 38.0 N --nw-lon 31 7 45.4 E ...`); geolocation goes through rasterio `GCPTransformer` and reads only the box window, never the whole ~1.5 GB scene.
+- The `biondi-malanga-sar-tomography` skill (available via the Skill tool) is the knowledge base for the source paper — use it when touching the tomography math or interpreting results.

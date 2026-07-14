@@ -10,6 +10,11 @@ rem Le credenziali CDSE (account gratuito su dataspace.copernicus.eu) vengono
 rem chieste UNA volta e salvate in .cdse.env accanto a questo file; il file e'
 rem gia' in .gitignore e non finisce mai nel repository. Per cambiarle basta
 rem cancellare .cdse.env. NB: password che contengono "=" non sono supportate.
+rem
+rem Se il download HTTP diretto dal CDSE fallisce, lo script riprova da solo
+rem prima su Google Drive (site:drive.google.com) e poi, come ultima spiaggia,
+rem sulla rete BitTorrent (Academic Torrents & co.) - nessuna azione manuale
+rem richiesta qui.
 rem ============================================================================
 setlocal EnableExtensions
 cd /d "%~dp0"
