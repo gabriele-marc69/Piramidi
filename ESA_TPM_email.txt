@@ -1,0 +1,92 @@
+To:      eohelp@esa.int
+Subject: Third Party Missions project proposal — Independent validation of
+         Micro-Motion SAR Doppler tomography on the Giza pyramids
+
+Dear ESA Earth Observation Help Desk,
+
+I would like to submit a project proposal under the ESA Earthnet / Third
+Party Missions programme, and I would be grateful for your guidance on the
+formal submission (I am registering the proposal via EO Sign In / the TellUS
+portal in parallel). A summary of the proposal follows; the full text is
+available on request and in the project repository below.
+
+1. TITLE
+
+Independent, Reproducible Validation of Micro-Motion SAR Doppler Tomography
+on Large Static Structures: an Open-Source Test Case on the Giza Pyramids.
+
+2. PRINCIPAL INVESTIGATOR
+
+| Name        | Gabriele Marchini                           |
+| ----------- | ------------------------------------------- |
+| Affiliation | Independent researcher, Italy               |
+| E-mail      | gabrielemarchini69@gmail.com                |
+| Programme   | https://github.com/gabriele-marc69/Piramidi |
+
+The "Programme" entry is the open-source processing chain (search, download,
+co-registration, DInSAR, Micro-Motion Doppler tomography with steering-matrix
+inversion and a synthetic forward model), publicly released under MIT licence.
+
+3. SUMMARY
+
+Micro-Motion (MM) SAR Doppler tomography (Biondi & Malanga, Remote Sensing
+2022, 14, 5231) claims depth-resolved imaging of the interior of large static
+structures from a single SAR acquisition. The method is potentially
+transformative for non-invasive structural assessment, but no independent,
+fully reproducible verification exists. We built an open-source end-to-end
+pipeline and applied it to free Sentinel-1 IW SLC stacks over the Giza
+pyramids, establishing a quantitative information budget which shows that IW
+TOPS data are intrinsically insufficient:
+
+| Quantity                             | Value  |
+| ------------------------------------ | ------ |
+| Independent Doppler looks per target | ~12    |
+| Nominal depth resolution (dz)        | ~1.2 m |
+| Ambiguity height (z_amb)             | ~8.5 m |
+| Resolvable depth cells               | ~7     |
+| Structure scale to resolve           | ~140 m |
+
+We therefore request high-dwell Spotlight (preferred) or Stripmap SLC
+acquisitions over the Giza plateau to (a) validate the MM tomographic chain
+against the KNOWN internal structures of the Great Pyramid, and (b) publish
+the first independent, fully open assessment of the method's real
+capabilities and limits. We deliberately do not frame the project as a search
+for undiscovered chambers: a negative result is equally publishable. All
+code, parameters, and derived products will be released openly.
+
+4. DATA REQUIREMENTS
+
+| Item                   | Request                                         |
+| ---------------------- | ----------------------------------------------- |
+| Missions (preference)  | COSMO-SkyMed / CSG (Spotlight-2), TerraSAR-X /  |
+|                        | TanDEM-X (Staring/High-Res SpotLight), PAZ (SL) |
+| Fallback               | Stripmap SLC time series (TSX SM, CSK Himage)   |
+| Product level          | SLC (complex, single look) — mandatory          |
+| Polarisation           | Single co-pol (HH or VV); dual-pol welcome      |
+| Area of interest       | Giza plateau, Egypt — 29.976 N, 31.132 E;       |
+|                        | footprint >= 2 x 2 km (Khufu and Khafre)        |
+| Number of acquisitions | >= 6 same-geometry passes; archive-only is fine |
+| Time span              | Any; >= 3 months first-to-last pass preferred   |
+| Estimated volume       | <= 20 scenes, ~40 GB total                      |
+
+5. WORK PLAN (12 MONTHS)
+
+WP1 ingestion of the granted mission's SLC format; WP2 synthetic calibration
+of the information budget; WP3 blind validation on Khufu's documented
+interior; WP4 capability envelope and cross-method comparison (muon
+spectroscopy 2017, thermal and microgravimetric surveys); WP5 open release,
+final report, and a peer-reviewed publication acknowledging ESA/TPM data
+provision. Original third-party products will be handled per the mission's
+licence and never redistributed.
+
+Could you please confirm the correct submission route for this proposal and
+whether any additional forms are required for the missions listed above?
+
+Thank you for your time and consideration.
+
+Kind regards,
+
+Gabriele Marchini
+Independent researcher, Italy
+gabrielemarchini69@gmail.com
+https://github.com/gabriele-marc69/Piramidi

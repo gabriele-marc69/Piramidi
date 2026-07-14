@@ -1,8 +1,7 @@
 # ESA Earthnet / Third Party Missions — Project Proposal (DRAFT)
 
-> **Status: draft for internal review — complete except the public repository
-> URL, to be added once the repository is published (prerequisite for
-> submission).**
+> **Status: ready for submission — public repository published at
+> https://github.com/gabriele-marc69/Piramidi .**
 > Target submission channel: ESA EO Sign In → earth.esa.int/eogateway → Third Party
 > Missions data access (project proposal). Parallel submissions worth considering:
 > ASI COSMO-SkyMed Open Call (same science case), DLR TerraSAR-X Science Service.
@@ -19,9 +18,8 @@ Large Static Structures: an Open-Source Test Case on the Giza Pyramids**
 - Name: Gabriele Marchini
 - Affiliation: Independent researcher, Italy
 - E-mail: gabrielemarchini69@gmail.com
-- Open-source project repository: *public release pending — URL to be added here
-  before submission (the processing chain described in Sections 6–7 is complete
-  and will be published in full)*
+- Open-source project repository: https://github.com/gabriele-marc69/Piramidi
+  (the full processing chain described in Sections 6–7, publicly released)
 
 ## 3. Executive summary (≤ 200 words)
 
@@ -61,13 +59,13 @@ results rest on high-dwell X-band data not openly available.
 Our pipeline quantifies the limit precisely. For the Khafre-pyramid ground box
 (~26 azimuth × 81 range pixels, IW2 VV/VH, 6–12 scenes, one track):
 
-| Quantity | Value | Driver |
-|---|---|---|
-| Independent Doppler looks per target, k | ~12 | TOPS burst dwell (~0.5 s) caps per-target azimuth bandwidth; box supports ~13 usable spectral bins at the paper's 50 % guard band |
-| Nominal depth resolution δz | ~1.2 m | δz = λ_sonic·R/(2A), λ_sonic = 0.24 m, R ≈ 850 km, A ≈ 84 km |
-| Ambiguity height z_amb | **≈ 8.5 m** | z_amb ∝ (k−1); depths alias modulo z_amb |
-| Resolvable depth cells ≈ z_amb/δz | ~7 | ≈ k−1, invariant under any re-parameterisation |
-| Structure scale to resolve | ~140 m | Khafre height ≈ 136 m, base 215 m |
+| Quantity                                | Value       | Driver                                                                                                                            |
+| --------------------------------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Independent Doppler looks per target, k | ~12         | TOPS burst dwell (~0.5 s) caps per-target azimuth bandwidth; box supports ~13 usable spectral bins at the paper's 50 % guard band |
+| Nominal depth resolution δz             | ~1.2 m      | δz = λ_sonic·R/(2A), λ_sonic = 0.24 m, R ≈ 850 km, A ≈ 84 km                                                                      |
+| Ambiguity height z_amb                  | **≈ 8.5 m** | z_amb ∝ (k−1); depths alias modulo z_amb                                                                                          |
+| Resolvable depth cells ≈ z_amb/δz       | ~7          | ≈ k−1, invariant under any re-parameterisation                                                                                    |
+| Structure scale to resolve              | ~140 m      | Khafre height ≈ 136 m, base 215 m                                                                                                 |
 
 The number of resolvable depth cells is bounded by the number of independent looks;
 no re-grouping of parameters, multi-modulus fusion, or post-processing can exceed
@@ -98,16 +96,16 @@ publishable and equally valuable to the EO community.
 
 ## 5. Data requirements
 
-| Item | Request |
-|---|---|
-| Missions (any of, in order of preference) | COSMO-SkyMed / COSMO-SkyMed SG (Spotlight-2), TerraSAR-X / TanDEM-X (Staring/High-Res SpotLight), PAZ (SpotLight) |
-| Fallback | Stripmap SLC time series (TerraSAR-X SM, CSK Himage); Sentinel-1 SM on-demand from L0 where archive acquisitions exist |
-| Product level | SLC (complex, single look) — mandatory; no detected/geocoded products |
-| Polarisation | Single co-pol sufficient (HH or VV); dual-pol welcome |
-| Area of interest | Giza plateau, Egypt — centre ≈ 29.976° N, 31.132° E; footprint ≥ 2 × 2 km covering Khufu and Khafre |
-| Number of acquisitions | ≥ 6 same-geometry passes (new tasking or archive), to enable cross-scene stability statistics; archive-only is acceptable |
-| Time span | Any; ≥ 3 months between first and last pass preferred |
-| Estimated volume | ≤ 20 scenes, ≈ 40 GB total (Spotlight/Stripmap SLC ≈ 1–2 GB per scene) |
+| Item                                      | Request                                                                                                                   |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Missions (any of, in order of preference) | COSMO-SkyMed / COSMO-SkyMed SG (Spotlight-2), TerraSAR-X / TanDEM-X (Staring/High-Res SpotLight), PAZ (SpotLight)         |
+| Fallback                                  | Stripmap SLC time series (TerraSAR-X SM, CSK Himage); Sentinel-1 SM on-demand from L0 where archive acquisitions exist    |
+| Product level                             | SLC (complex, single look) — mandatory; no detected/geocoded products                                                     |
+| Polarisation                              | Single co-pol sufficient (HH or VV); dual-pol welcome                                                                     |
+| Area of interest                          | Giza plateau, Egypt — centre ≈ 29.976° N, 31.132° E; footprint ≥ 2 × 2 km covering Khufu and Khafre                       |
+| Number of acquisitions                    | ≥ 6 same-geometry passes (new tasking or archive), to enable cross-scene stability statistics; archive-only is acceptable |
+| Time span                                 | Any; ≥ 3 months between first and last pass preferred                                                                     |
+| Estimated volume                          | ≤ 20 scenes, ≈ 40 GB total (Spotlight/Stripmap SLC ≈ 1–2 GB per scene)                                                    |
 
 **Justification of mode choice:** the tomographic information content scales with
 per-target Doppler dwell (Section 4.2). Spotlight dwell (seconds) supports the
@@ -175,4 +173,4 @@ depth claims will carry the applicable ambiguity/resolution bounds.
 5. ScanPyramids mission (HIP Institute / Ministry of Antiquities, Egypt).
    Infrared thermography campaign reports, 2015–2016 (thermal anomalies at the
    NE ground-level edge of Khufu).
-6. Repository DOI/URL: *to be added at public release (see Section 2).*
+6. Project repository: https://github.com/gabriele-marc69/Piramidi
