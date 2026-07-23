@@ -944,6 +944,23 @@ def main():
                 f"interferometriche possibili tra loro (combinazioni N*(N-1)/2, "
                 f"non solo le {max(n_scenes_vh - 1, 1)} sequenziali) per il "
                 f"numero massimo di strati e la miglior precisione")
+            n_seq = max(n_scenes_vh - 1, 1)
+            if n_layers > n_seq:
+                log(f"ATTENZIONE (onesta' metodologica): {n_layers} coppie invece "
+                    f"delle {n_seq} sequenziali NON equivalgono a {n_layers} look "
+                    f"tomografici indipendenti -- sono combinazioni delle stesse "
+                    f"{n_scenes_vh} scene, quindi fortemente correlate tra loro. "
+                    f"La formula z_amb = lambda_sonic*R*sin(theta)*(k-1)/(2A) "
+                    f"(skill sar-doppler-tomography) scala comunque con k = "
+                    f"{n_layers}, quindi la finestra di profondita' dell'onda "
+                    f"ESPLORATIVA (step 5-6 qui sotto) risultera' molto piu' "
+                    f"profonda dello z_amb REALE della tomografia Doppler "
+                    f"(klook={a.klook} sub-aperture indipendenti, sezione "
+                    f"'tomografia VH' piu' sotto): e' un artefatto del conteggio "
+                    f"combinatorio delle coppie, non maggiore risoluzione in "
+                    f"profondita' -- per la profondita' massima davvero "
+                    f"raggiungibile fidarsi SOLO dello z_amb della tomografia "
+                    f"vera, mai di quello riportato dallo step 5 esplorativo.")
         per_pol, x, y, coh = pu.step4_array_12(boxpath, n_layers, outdir)
         if "vh" not in per_pol:
             sys.exit("[acustica-vh] il box non contiene la polarizzazione VH")
