@@ -55,8 +55,17 @@ class GeometriaSAR:
         return self.lambda_sonic * self.R0 / (2.0 * self.apertura_orbitale)
 
 
-def baseline_ortogonali(k: int, B_perp_max: float = 42_000.0) -> np.ndarray:
-    """k orthogonal baselines B_perp, symmetric over the orbital aperture (Fig. 8d)."""
+def baseline_ortogonali(k: int, geo: "GeometriaSAR | None" = None,
+                        B_perp_max: float | None = None) -> np.ndarray:
+    """k orthogonal baselines B_perp, symmetric over the orbital aperture (Fig. 8d):
+    B_perp_max = geo.apertura_orbitale / 2 when geo is given (the k synthesized
+    "looks" span the FULL synthesis aperture A, symmetric about its center) --
+    this is what makes both delta_z (risoluzione_tomografica, already keyed off
+    apertura_orbitale) AND z_amb (via Kz here) scale consistently with the SAME
+    aperture. Falls back to the paper's own 84 km/2 COSMO-SkyMed Spotlight value
+    (42000 m) when no geo is passed, preserving old call sites/self-tests."""
+    if B_perp_max is None:
+        B_perp_max = (geo.apertura_orbitale / 2.0) if geo is not None else 42_000.0
     return np.linspace(-B_perp_max, B_perp_max, k)
 
 
@@ -70,13 +79,24 @@ def wavenumber_verticale(geo: GeometriaSAR, B_perp: np.ndarray,
 
 def steering_matrix(geo: GeometriaSAR, z: np.ndarray, k: int) -> np.ndarray:
     """A(Kz,z) in C^{k x F}: A[i,f] = exp(j Kz_i z_f)."""
-    Kz = wavenumber_verticale(geo, baseline_ortogonali(k))
+    Kz = wavenumber_verticale(geo, baseline_ortogonali(k, geo))
     return np.exp(1j * np.outer(Kz, z))
 
 
 def altezza_ambiguita(geo: GeometriaSAR, k: int) -> float:
-    Kz = wavenumber_verticale(geo, baseline_ortogonali(k))
+    Kz = wavenumber_verticale(geo, baseline_ortogonali(k, geo))
     return float(2 * np.pi / abs(Kz[1] - Kz[0]))
+
+
+def apertura_sintetica_em(f_em: float, R: float, res_az: float) -> float:
+    """Lunghezza dell'apertura sintetica EM reale A = lambda_em * R / (2 * res_az)
+    (formula classica di risoluzione azimuth SAR, risolta per A): stessa identica
+    formula di piramide_unificato._profondita_massima_fourier, qui condivisa cosi'
+    la tomografia Doppler VERA (questo modulo) e l'analisi esplorativa di Fourier
+    (pipeline principale) usano la STESSA apertura per lo stesso dato sorgente,
+    invece di lasciare la tomografia sull'apertura di default del paper (COSMO-
+    SkyMed Spotlight, 84 km) anche quando i dati sono Sentinel-1 IW/Stripmap."""
+    return (C / f_em) * R / (2.0 * res_az)
 
 
 # ---------------------------------------------------------------------------

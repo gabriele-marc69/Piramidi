@@ -14,8 +14,12 @@ Sentinel-1 SLC stack over a ground box and render the publication-style figures
 Usage:
   python tomographic_images.py --stack stack_slc --outdir tomo_img \
       --nw 29 58 38.0 N 31 7 45.4 E --se 29 58 29.0 N 31 7 55.4 E \
-      --zmax 8.5 --klook 12 --ovs 4
+      --zmax 200 --klook 12 --ovs 4
 Defaults target the Khafre (Chefren) pyramid box. Stay within z_amb (printed) or depths alias.
+For Sentinel-1 IW the real synthesized aperture (~1.1 km/burst, not the paper's
+84 km COSMO-SkyMed Spotlight value) gives z_amb~660 m but delta_z~24 m/cell
+(klook=12, ovs=4): coarse, but --zmax 8.5 (old default) is now far below one
+resolution cell and not meaningful.
 """
 import os, sys, glob, re, argparse
 import numpy as np
@@ -66,7 +70,7 @@ def main():
     ap.add_argument("--nw2", nargs=2, default=["45.4", "E"])
     ap.add_argument("--se", nargs=6, default=["29", "58", "29.0", "N", "31", "7"])
     ap.add_argument("--se2", nargs=2, default=["55.4", "E"])
-    ap.add_argument("--zmax", type=float, default=8.5)
+    ap.add_argument("--zmax", type=float, default=200.0)
     ap.add_argument("--klook", type=int, default=12)
     ap.add_argument("--ovs", type=float, default=4.0)
     a = ap.parse_args()
@@ -110,6 +114,17 @@ def main():
     geo = T.GeometriaSAR()
     geo.f_em = g["f_em"]; geo.V = g["V"]; geo.theta_deg = g["incid_mid"]
     geo.R0 = g["R_near"] + (ref["c0"] + W / 2.0) * g["dR"]; geo.B_doppler = 1.0 / g["dt_az"]
+    # real synthetic aperture of the source data, not the paper's default 84 km
+    # (their COSMO-SkyMed Spotlight Table 1 value): X-band -> keep the default,
+    # C-band (Sentinel-1) -> derive A = lambda_em*R/(2*res_az) so both delta_z
+    # and z_amb reflect what THIS acquisition mode can actually synthesize
+    if geo.f_em <= 8e9:                              # C-band: Sentinel-1
+        iw_src = "iw" in os.path.basename(ref["tif"]).lower()
+        res_az = 22.0 if iw_src else 5.0
+        geo.apertura_orbitale = T.apertura_sintetica_em(geo.f_em, geo.R0, res_az)
+        print(f"real synthetic aperture (Sentinel-1 {'IW' if iw_src else 'SM'}, "
+              f"C-band): A={geo.apertura_orbitale/1000:.2f} km (not the paper's "
+              f"default 84 km COSMO-SkyMed Spotlight value)")
     dz = geo.risoluzione_tomografica() / a.ovs
     z = np.arange(0.0, a.zmax + dz, dz)
     A = T.steering_matrix(geo, z, a.klook)

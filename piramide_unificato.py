@@ -39,16 +39,16 @@ Step (allineati al goal):
      UNA forma d'onda COMBINATA per pixel; il numero di "molle" disegnate e'
      ESATTAMENTE il numero di pixel dell'area selezionata (ny*nx), una per
      pixel.
-  6) per OGNI pixel dell'area selezionata (stessa griglia (ny,nx) degli step
-     4-5: un punto per pixel, non un sottoinsieme filtrato per banda) trova
-     il campione di profondita' con inviluppo (Hilbert) massimo e la sua
-     frequenza istantanea, poi classifica il punto PIENO (frequenza sotto
-     soglia = denso/solido) o VUOTO (frequenza sopra soglia = cavita'/aria);
-     disegna i punti in 3D alle ALTEZZE REALI rispetto al livello 0 (DEM
-     Copernicus + geometria del bersaglio). Ogni pixel usa la STESSA forma
-     d'onda combinata dello step 5 (tutti gli strati di tutte le pol in un
-     solo array, un solo passaggio di Fourier: campo 'pol' = es. 'vv+vh'
-     nel .npz e nell'hover).
+  6) classificazione a SOGLIA NETTA (binaria) della frequenza istantanea:
+     PIENO (frequenza sotto soglia = denso/solido) / VUOTO (frequenza sopra
+     soglia = cavita'/aria). Per OGNI pixel dell'area selezionata (stessa
+     griglia (ny,nx) degli step 4-5) si percorre la colonna verticale e nel
+     grafico si SEGNANO SOLO I PUNTI DI PASSAGGIO NETTO tra le due classi:
+     tetto del vuoto (PIENO->VUOTO, colore scuro) e fondo del vuoto
+     (VUOTO->PIENO, colore ambra), due colori discreti senza gradiente,
+     disegnati in 3D alle ALTEZZE REALI rispetto al livello 0 (DEM
+     Copernicus + geometria del bersaglio). Il punto per pixel al picco
+     dell'inviluppo (Hilbert) con la sua classe binaria resta solo nel .npz.
 
 *** NOTA METODOLOGICA IMPORTANTE (vedi anche skill biondi-malanga-sar-tomography) ***
 Gli step 5-6 sono un'analisi ESPLORATIVA ispirata al lessico di Biondi & Malanga
@@ -97,6 +97,8 @@ except Exception:
 C = 299_792_458.0
 DBG = False
 MIN_VALID_PCT = 50.0   # step 3: copertura minima dell'AOI in un sub-swath per tenerlo
+MOLLA_Z_MAX_CAMPIONI = 150  # step 5: max vertici/traccia disegnati per "molla" (solo
+                            # visualizzazione: w_pol/freq_pol restano a NZ pieno)
 
 # Box di default per piramide (DMS), presi dai due programmi ora unificati.
 # Passa esplicitamente --nw/--nw-lon/--se/--se-lon per un box custom.
@@ -105,10 +107,15 @@ MIN_VALID_PCT = 50.0   # step 3: copertura minima dell'AOI in un sub-swath per t
 # della base e' anche il riferimento metrico interno usato nel paper Biondi-Malanga
 # (skill biondi-malanga-sar-tomography, sez. 5.19): sbagliarla falsa le quote.
 PRESETS = {
+    # stack_outdir_name (opzionale): cartella base in cui CERCARE i TIFF dello
+    # stack (stack_slc/). Le scene Sentinel-1 IW coprono TUTTA la piana di
+    # Giza, quindi Cheope e Kefren condividono gli stessi measurement: Cheope
+    # riusa lo stack gia' scaricato di Kefren invece di riscaricare ~8 GB a
+    # scena in una cartella propria. Output/box restano in outdir_name.
     "cheope": dict(
         nw=("29", "58", "48.0", "N"), nw_lon=("31", "7", "58.4", "E"),
         se=("29", "58", "41.0", "N"), se_lon=("31", "8", "07.7", "E"),
-        outdir_name="goal_out_Cheope",
+        outdir_name="goal_out_Cheope", stack_outdir_name="goal_out_kefren",
         base_m=230.3, h_m=138.7, label="Cheope (Khnum-Khufu)"),
     "kefren": dict(
         nw=("29", "58", "38.0", "N"), nw_lon=("31", "7", "45.4", "E"),
@@ -122,11 +129,14 @@ PRESETS = {
 # 1 entrata originale, 2 traforo dei ladri, 3 giunzione, 4 corridoio
 # discendente, 5 camera sotterranea, 6 corridoio ascendente, 7 camera della
 # Regina, 8 corridoio orizzontale, 9 Grande Galleria, 10 camera del Re,
-# 11 pozzo verticale). s_m = metri a NORD del centro della base (negativo =
-# sud), h_m = metri SOPRA la base, e_m = metri a EST del centro (default 0.0:
-# il diagramma sorgente e' una sezione 2D N-S, quindi quasi tutti i punti
-# sono sul piano verticale centrale N-S; l'unica eccezione nota e ben
-# documentata in letteratura e' l'entrata originale, qui inclusa).
+# 11 pozzo verticale) + 12-13 le due cavita' scoperte di recente via
+# muografia dal progetto ScanPyramids (vedi nota dedicata sotto). s_m =
+# metri a NORD del centro della base (negativo = sud), h_m = metri SOPRA la
+# base, e_m = metri a EST del centro (default 0.0: il diagramma sorgente e'
+# una sezione 2D N-S, quindi quasi tutti i punti sono sul piano verticale
+# centrale N-S; le uniche eccezioni note e ben documentate in letteratura
+# sono l'entrata originale e il corridoio nord, entrambe qui incluse con
+# offset E-W).
 # Valori incrociati con le misure originali di Petrie (1883, "The Pyramids
 # and Temples of Gizeh") dove reperibili:
 #   - Entrata originale: altezza 668.3 pollici sopra il pavimento = 16.97 m
@@ -160,6 +170,30 @@ PRESETS = {
 # Per i tratti INCLINATI l'ingombro e' il bounding box del tratto (il "cubo"
 # contiene il corridoio in diagonale); per traforo e pozzo (scavi irregolari)
 # e' un ingombro indicativo. I box sono CENTRATI sul punto di riferimento.
+#
+# Punti 12-13: le due cavita' interne scoperte dal 2017 in poi dal progetto
+# ScanPyramids via muografia (radiografia a raggi cosmici muonici), NON
+# presenti nei diagrammi ottocenteschi usati per i punti 1-11:
+#   - "Big Void" (Grande Vuoto): Morishima et al., "Discovery of a big void
+#     in Khufu's Pyramid by observation of cosmic-ray muons", Nature 552,
+#     386-390 (2017). Sezione trasversale paragonabile alla Grande Galleria
+#     (~2.1 m largh.), lunghezza minima pubblicata ~30 m (stime successive
+#     fino a ~40 m), situata sopra la Grande Galleria, non piu' di ~15 m al
+#     di sopra di essa. Gli stessi autori dichiarano ESPLICITAMENTE di NON
+#     sapere se sia orizzontale o inclinata, ne' se sia una struttura unica
+#     o piu' cavita' consecutive: qui e' quindi un ingombro APPROSSIMATO e
+#     volutamente generoso (allineato in pianta sopra la Grande Galleria,
+#     stessa quota centrale + margine per l'incertezza pubblicata), NON una
+#     geometria accertata -- riferimento visivo esplorativo, non una misura.
+#   - "North Face Corridor" (corridoio nord): Procureur et al., "Precise
+#     characterization of a corridor-shaped structure in Khufu's Pyramid by
+#     observation of cosmic-ray muons", Nature Communications 14, 1144
+#     (2023). Corridoio orizzontale ~9.1 m di lunghezza, sezione ~2x2 m,
+#     che inizia ~0.8 m dietro i blocchi a chevron sopra l'entrata
+#     originale e scende verso sud; localizzato a 17-23 m sopra il livello
+#     del suolo, pochi metri sotto la superficie della faccia nord -- qui
+#     posizionato sullo stesso asse E-W dell'entrata originale (7.9 m),
+#     quota al centro della fascia 17-23 m pubblicata.
 RIFERIMENTI_CHEOPE = [
     #  n  nome                                        s_m     h_m    e_m   ns_m   ew_m  alt_m
     (1, "Entrata originale", 115.15, 16.97, 7.9, 2.0, 1.1, 1.2),
@@ -173,19 +207,53 @@ RIFERIMENTI_CHEOPE = [
     (9, "Grande Galleria", 42.4, 35.2, 0.0, 41.9, 2.1, 29.4),
     (10, "Camera del Re", 17.0, 43.0, 0.0, 5.2, 10.5, 5.9),
     (11, "Pozzo verticale (Well Shaft)", 68.0, 0.0, 0.0, 2.0, 2.0, 50.0),
+    (12, "Grande Vuoto (Big Void, ScanPyramids 2017)", 42.4, 57.0, 0.0, 35.0, 2.1, 15.0),
+    (13, "Corridoio nord (North Face Corridor, ScanPyramids 2023)", 109.8, 20.0, 7.9, 9.1, 2.0, 2.0),
 ]
 
-# Strutture interne note di Chefren (Khafre): dimensioni dai rilievi
-# pubblicati (Belzoni 1818; Maragioglio & Rinaldi, "L'architettura delle
-# piramidi menfite"): camera sepolcrale 14.15 (E-W) x 5.0 (N-S) x 6.83 h
-# (tetto a doppio spiovente), camera sussidiaria 10.41 (N-S) x 3.12 (E-W) x
-# 2.65 h. Le POSIZIONI (s/h/e) sono APPROSSIMATE dalle sezioni pubblicate
-# (la camera sepolcrale e' presso l'asse centrale, al livello della base;
-# la sussidiaria e' nel sottosuolo lungo il corridoio inferiore, a nord).
+# Strutture interne note di Chefren (Khafre): la piramide ha DUE sistemi di
+# corridoi indipendenti (uno scende dal lastricato a nord, l'altro dalla
+# facciata nord) che si ricongiungono nello stesso corridoio orizzontale
+# finale verso la camera sepolcrale (Vyse & Perring 1837; Belzoni 1818;
+# Lehner "The Complete Pyramids"; Maragioglio & Rinaldi, "L'architettura
+# delle piramidi menfite"; Wikipedia "Pyramid of Khafre", sez. Interior,
+# concorde con le fonti precedenti sui valori qui usati):
+#   - Ingresso superiore: 11.54 m sopra la base sulla facciata nord (fonte
+#     concorde su piu' siti; Petrie/Vyse).
+#   - Ingresso inferiore: nel lastricato, a livello del suolo, ~30 m a nord
+#     della base, sullo stesso asse verticale dell'ingresso superiore.
+#   - ENTRAMBI i corridoi sono spostati 12 m ad EST rispetto all'asse
+#     centrale N-S della piramide (Wikipedia, concorde con Lehner): a
+#     differenza della Grande Piramide (dove solo l'entrata e' nota fuori
+#     asse), qui l'offset e' applicato a TUTTI i punti dei due corridoi; la
+#     camera sepolcrale invece resta presso l'asse centrale (nessuna fonte
+#     la riporta spostata).
+#   - Corridoio superiore (rivestito in granito rosa): ~100 m dall'ingresso
+#     alla giunzione col corridoio orizzontale finale.
+#   - Corridoio inferiore: scavato nella roccia, ~120 m totali fino alla
+#     giunzione, con un tratto in salita dopo la camera sussidiaria.
+#   - Camera sussidiaria: si apre a OVEST del corridoio inferiore (quindi
+#     spostata verso il centro rispetto ai 12 m dei corridoi: qui stimata a
+#     +8 m, non essendo pubblicata una quota precisa), lunga quanto la
+#     Camera del Re di Cheope (~10.47 m, fonte Wikipedia) -> 10.4 (N-S) x
+#     3.1 (E-W) x 2.7 h.
+#   - Camera sepolcrale: 14.15 (E-W) x 5.0 (N-S) x 6.83 h (tetto a doppio
+#     spiovente), presso l'asse centrale, quota poco sopra la base.
+# NOTA: a differenza delle camere (misure dirette pubblicate), le lunghezze
+# e posizioni dei corridoi sono ricostruite dalle lunghezze TOTALI
+# pubblicate (fonti sopra) suddivise in tratti: sono quindi APPROSSIMATE
+# quanto i tratti di corridoio/pozzo gia' presenti in RIFERIMENTI_CHEOPE,
+# NON misure di rilievo dirette segmento per segmento -- riferimento visivo,
+# non dato accertato al centimetro.
 RIFERIMENTI_KEFREN = [
-    (1, "Camera sepolcrale (Belzoni)", 0.0, 3.4, 0.0, 5.0, 14.2, 6.8),
-    (2, "Camera sussidiaria (sotterranea)", 35.0, -9.0, 0.0, 10.4, 3.1, 2.7),
-    (3, "Corridoio discendente inferiore", 65.0, -7.0, 0.0, 55.0, 1.1, 14.0),
+    #  n  nome                                              s_m     h_m    e_m   ns_m   ew_m  alt_m
+    (1, "Ingresso inferiore (lastricato, a nord)", 137.7, 0.0, 12.0, 2.0, 1.1, 1.2),
+    (2, "Corridoio discendente inferiore", 65.0, -7.0, 12.0, 55.0, 1.1, 14.0),
+    (3, "Camera sussidiaria (sotterranea)", 35.0, -9.0, 8.0, 10.4, 3.1, 2.7),
+    (4, "Ingresso superiore (facciata nord, 11.54 m)", 107.75, 11.54, 12.0, 2.0, 1.1, 1.3),
+    (5, "Corridoio discendente superiore (rivestito in granito)", 54.0, 7.5, 12.0, 100.0, 1.1, 15.0),
+    (6, "Corridoio orizzontale (giunzione verso la camera)", 15.0, 3.4, 6.0, 20.0, 1.1, 1.8),
+    (7, "Camera sepolcrale (Belzoni)", 0.0, 3.4, 0.0, 5.0, 14.2, 6.8),
 ]
 
 # riferimenti per piramide (chiave = valore di --pyramid)
@@ -218,12 +286,13 @@ TEMA_UI = dict(
 
 def _scrivi_pagina_html(fig, path, titolo, sottotitolo, badges=(), nota=None,
                         post_script=None):
-    """Scrive `fig` in una pagina HTML con layout curato: header fisso con
-    titolo, sottotitolo, badge riassuntivi e nota metodologica richiudibile;
-    il grafico occupa TUTTA l'altezza restante della finestra. Sostituisce il
-    write_html nudo di Plotly, che infilava un titolo lunghissimo dentro il
-    canvas sovrapponendolo alla scena 3D e lasciava la pagina bianca di
-    default. `badges` = sequenza di coppie (etichetta, valore)."""
+    """Scrive `fig` in una pagina HTML con layout curato: header sottile in
+    alto col solo titolo; descrizione (sottotitolo), badge riassuntivi e nota
+    metodologica richiudibile stanno in un FOOTER sotto il grafico, che cosi'
+    occupa tutta l'altezza restante della finestra. Sostituisce il write_html
+    nudo di Plotly, che infilava un titolo lunghissimo dentro il canvas
+    sovrapponendolo alla scena 3D e lasciava la pagina bianca di default.
+    `badges` = sequenza di coppie (etichetta, valore)."""
     import plotly.io as pio
     corpo = pio.to_html(fig, full_html=False, include_plotlyjs="cdn",
                         post_script=post_script,
@@ -248,11 +317,21 @@ def _scrivi_pagina_html(fig, path, titolo, sottotitolo, badges=(), nota=None,
   html, body {{ margin: 0; height: 100%; background: {t['sfondo']};
                 color: {t['testo']}; font-family: {t['font']}; }}
   .app {{ display: flex; flex-direction: column; height: 100%; }}
-  header {{ flex: none; padding: 10px 16px 9px; background: {t['pannello']};
+  header {{ flex: none; padding: 8px 16px 7px; background: {t['pannello']};
             border-bottom: 1px solid {t['bordo']}; }}
-  header h1 {{ margin: 0 0 2px; font-size: 16px; font-weight: 600;
+  header h1 {{ margin: 0; font-size: 16px; font-weight: 600;
                letter-spacing: .2px; }}
-  header .sotto {{ margin: 0; font-size: 12.5px; line-height: 1.55;
+  /* footer MINIMO: da chiuso e' una sola riga sottile; descrizione, badge e
+     nota metodologica compaiono solo aprendolo (pochissimo spazio sottratto
+     al grafico) */
+  footer {{ flex: none; padding: 2px 12px 3px; background: {t['pannello']};
+            border-top: 1px solid {t['bordo']}; }}
+  footer > details {{ max-height: 42vh; overflow-y: auto; }}
+  footer > details > summary {{ cursor: pointer; font-size: 11.5px;
+            color: {t['accento']}; font-weight: 600; outline-offset: 2px;
+            transition: opacity .2s; user-select: none; }}
+  footer > details > summary:hover {{ opacity: .8; }}
+  footer .sotto {{ margin: 6px 0 0; font-size: 12.5px; line-height: 1.55;
                    color: {t['testo_muto']}; max-width: 110ch; }}
   .chips {{ margin-top: 7px; display: flex; flex-wrap: wrap; gap: 6px; }}
   .chip {{ font-size: 11.5px; color: {t['testo_muto']}; background: {t['sfondo']};
@@ -266,8 +345,15 @@ def _scrivi_pagina_html(fig, path, titolo, sottotitolo, badges=(), nota=None,
                    outline-offset: 3px; transition: opacity .2s; }}
   .nota summary:hover {{ opacity: .8; }}
   .nota p {{ margin: 6px 0 0; line-height: 1.55; }}
-  main {{ flex: 1 1 auto; min-height: 0; }}
-  main .plotly-graph-div {{ height: 100% !important; }}
+  /* il canvas Plotly e' ancorato in assoluto all'area di main: cosi' la sua
+     altezza non puo' mai "spingere" il footer (descrizione + opzioni) fuori
+     dalla finestra, qualunque altezza calcoli Plotly */
+  main {{ flex: 1 1 auto; min-height: 0; position: relative; }}
+  /* SOLO il wrapper del canvas Plotly (primo figlio) riempie main: gli altri
+     div aggiunti via JS (es. il pannello 'fuoco/soglia') si posizionano da
+     soli e NON devono ereditare inset:0 (coprirebbero la pagina) */
+  main > div:first-child {{ position: absolute; inset: 0; }}
+  main .plotly-graph-div {{ height: 100% !important; width: 100% !important; }}
   @media (prefers-reduced-motion: reduce) {{
     * {{ transition: none !important; animation: none !important; }}
   }}
@@ -277,13 +363,18 @@ def _scrivi_pagina_html(fig, path, titolo, sottotitolo, badges=(), nota=None,
 <div class="app">
   <header>
     <h1>{titolo}</h1>
-    <p class="sotto">{sottotitolo}</p>
-    <div class="chips">{chips}</div>
-    {nota_html}
   </header>
   <main>
 {corpo}
   </main>
+  <footer>
+    <details>
+      <summary>Descrizione, dettagli e nota metodologica</summary>
+      <p class="sotto">{sottotitolo}</p>
+      <div class="chips">{chips}</div>
+      {nota_html}
+    </details>
+  </footer>
 </div>
 </body>
 </html>
@@ -443,7 +534,7 @@ def _tracce_riferimenti(riferimenti):
     tracce.append(go.Scatter3d(
         x=[r[2] for r in riferimenti], y=[r[3] for r in riferimenti],
         z=[r[4] for r in riferimenti], mode="markers+text",
-        marker=dict(size=4, color="#16a34a", symbol="diamond",
+        marker=dict(size=3, color="#16a34a", symbol="diamond",
                     line=dict(width=1, color="black")),
         text=[str(r[0]) for r in riferimenti], textposition="top center",
         textfont=dict(size=11, color="#166534"),
@@ -677,16 +768,45 @@ def _scarica_ripristinabile(url, dest, get_token, expected=0, n_try=60):
             req = urllib.request.Request(url, headers=headers)
             # _CDSE_OPENER conserva l'Authorization sul redirect verso il nodo download
             with _CDSE_OPENER.open(req, timeout=1800) as r:
-                mode = "ab" if (have and r.status == 206) else "wb"
-                if mode == "wb":
-                    have = 0
-                with open(part, mode) as fo:
-                    while True:
-                        chunk = r.read(1 << 20)
-                        if not chunk:
-                            break
-                        fo.write(chunk)
-                        have += len(chunk)
+                if have and r.status != 206:
+                    # il server ha ignorato il Range e rimanda il file INTERO:
+                    # scarica in un file temporaneo SEPARATO senza toccare
+                    # 'part' (che contiene il progresso gia' ottenuto). Se
+                    # questo tentativo si interrompe a meta' (frequente con
+                    # una rete instabile: e' proprio quello che ha innescato
+                    # il fallback non-206), il progresso precedente non va
+                    # PERSO -- prima qui si troncava 'part' con mode='wb'
+                    # subito all'apertura, buttando via GB gia' scaricati
+                    # anche se il nuovo tentativo falliva dopo pochi byte.
+                    tmp_full = part + ".full"
+                    got = 0
+                    with open(tmp_full, "wb") as fo:
+                        while True:
+                            chunk = r.read(1 << 20)
+                            if not chunk:
+                                break
+                            fo.write(chunk)
+                            got += len(chunk)
+                    if expected and got >= expected:
+                        os.replace(tmp_full, part)
+                        have = got
+                    else:
+                        try:
+                            os.remove(tmp_full)
+                        except OSError:
+                            pass
+                        raise IOError(
+                            f"risposta non-206 (Range ignorato) e ridownload "
+                            f"completo non riuscito ({got/1e9:.2f} GB, scartati "
+                            f"per non perdere i {have/1e9:.2f} GB gia' salvati)")
+                else:
+                    with open(part, "ab") as fo:
+                        while True:
+                            chunk = r.read(1 << 20)
+                            if not chunk:
+                                break
+                            fo.write(chunk)
+                            have += len(chunk)
             if not expected or have >= expected:
                 break
             log(f"    ! ricevuti {have/1e9:.2f}/{expected/1e9:.1f} GB; ritento")
@@ -1022,11 +1142,24 @@ def _verifica_e_filtra_track(chips, nomi, geom, tol_s=20, track_filter=True):
     return keep, diag
 
 
+def _ordina_temporale(paths):
+    """Ordina i TIFF per istante di acquisizione (YYYYMMDDtHHMMSS nel nome
+    file), NON alfabeticamente: l'ordine alfabetico mette il satellite
+    (s1a-/s1c-/s1d-) prima della data, quindi con piattaforme miste
+    spezzerebbe la sequenza temporale degli strati dello stack."""
+    def chiave(p):
+        nome = os.path.basename(p).lower()
+        m = re.search(r"(\d{8}t\d{6})", nome)
+        return (m.group(1) if m else "", nome)
+    return sorted(paths, key=chiave)
+
+
 def _estrai_chips_pol(stackdir, pol, corners):
     """Geolocalizza l'AOI su ogni TIFF della polarizzazione `pol` via i GCP e
-    ritaglia i chip complessi. Ritorna (chips, nomi, geom)."""
-    tiffs = sorted(glob.glob(os.path.join(stackdir, f"*-iw[1-3]-slc-{pol}-*.tiff"))) or \
-            sorted(glob.glob(os.path.join(stackdir, f"*slc-{pol}-*.tiff")))
+    ritaglia i chip complessi (in ordine temporale di acquisizione).
+    Ritorna (chips, nomi, geom)."""
+    tiffs = _ordina_temporale(glob.glob(os.path.join(stackdir, f"*-iw[1-3]-slc-{pol}-*.tiff"))) or \
+            _ordina_temporale(glob.glob(os.path.join(stackdir, f"*slc-{pol}-*.tiff")))
     if not tiffs:
         return [], [], None
     import rasterio
@@ -1494,7 +1627,7 @@ def step5_grafico_onde(per_pol, x, y, aoi, outdir, pyr_geom,
             .reshape(ny, nx, NZ).astype(np.float32)
         freq_sep[p], env_sep[p] = _frequenza_istantanea(w_sep, dz)
     log(f"[5] forme d'onda separate per pol ({', '.join(q.upper() for q in pols_orig)}): "
-        f"pronte per lo step 6 (punti VUOTO per pol, prima "
+        f"pronte per lo step 6 (passaggi netti PIENO/VUOTO per pol, prima "
         f"{pols_orig[0].upper()}" +
         (f" poi {' poi '.join(q.upper() for q in pols_orig[1:])}" if len(pols_orig) > 1 else "") + ")")
 
@@ -1516,17 +1649,30 @@ def step5_grafico_onde(per_pol, x, y, aoi, outdir, pyr_geom,
     tracce = {}
     gap = np.array([np.nan])
     offsets = [(k * STEP_X) // len(pols) for k in range(len(pols))]
+    # sotto-campionamento SOLO per il disegno delle "molle" (linea per pixel):
+    # con NZ molto grande (es. onda campionata ogni pochi cm su una finestra
+    # di profondita' di centinaia/migliaia di metri) il file HTML esploderebbe
+    # (ny*nx*NZ vertici in un'unica traccia); w_pol/freq_pol/z restano a piena
+    # risoluzione per la classificazione PIENO/VUOTO (step 6 e derivati), qui
+    # si disegna un vertice ogni zstride campioni senza alterare i dati.
+    zstride = max(1, NZ // MOLLA_Z_MAX_CAMPIONI)
+    zsl = slice(0, NZ, zstride)
+    NZs = len(range(0, NZ, zstride))
     for k, p in enumerate(pols):
         jj = np.arange(offsets[k], nx, STEP_X)
         X, Y, Z, Cc = [], [], [], []
         for i in ii:
             for j in jj:
-                wp = w_pol[p][i, j]
-                fp = freq_pol[p][i, j]           # colore = frequenza istantanea
-                X += [x_m[j] + sc * wp, gap]; Y += [np.full(NZ, y_m[i]), gap]
-                Z += [z0[i, j] - z, gap]; Cc += [fp, gap]
+                wp = w_pol[p][i, j][zsl]
+                fp = freq_pol[p][i, j][zsl]      # colore = frequenza istantanea
+                X += [x_m[j] + sc * wp, gap]; Y += [np.full(NZs, y_m[i]), gap]
+                Z += [z0[i, j] - z[zsl], gap]; Cc += [fp, gap]
         tracce[p] = (np.concatenate(X), np.concatenate(Y),
                      np.concatenate(Z), np.concatenate(Cc))
+    if zstride > 1:
+        log(f"[5] NZ={NZ} campioni: disegno una \"molla\" ogni {zstride} campioni "
+            f"({NZs} vertici/traccia invece di {NZ}) per tenere l'HTML apribile; "
+            f"w/freq_pol restano a piena risoluzione per la classificazione")
     n_tracce = sum(len(np.arange(offsets[k], nx, STEP_X)) * len(ii)
                    for k in range(len(pols)))
     colonne_coperte = len(set(j for off in offsets for j in range(off, nx, STEP_X)))
@@ -1624,8 +1770,8 @@ def step5_grafico_onde(per_pol, x, y, aoi, outdir, pyr_geom,
         off = (k * STEP_X) // len(pols)
         for i in ii:
             for j in np.arange(off, nx, STEP_X):
-                ax.plot(x_m[j] + sc * w_pol[p][i, j], np.full(NZ, y_m[i]),
-                        z0[i, j] - z, lw=0.6)
+                ax.plot(x_m[j] + sc * w_pol[p][i, j][zsl], np.full(NZs, y_m[i]),
+                        z0[i, j] - z[zsl], lw=0.6)
     ax.set_xlabel("x E-W [m]"); ax.set_ylabel("y N-S [m]"); ax.set_zlabel("quota s.l.m. [m]")
     ax.set_zlim(ZBOT, ZTOP); ax.set_box_aspect((Lx, Ly, ZD))
     ax.set_title(f"Step 5 — forme d'onda dalla quota reale "
@@ -1651,25 +1797,27 @@ def step5_grafico_onde(per_pol, x, y, aoi, outdir, pyr_geom,
 
 # ===================================================================== STEP 6
 def step6_variazioni(freq_pol, env_pol, z, x_m, y_m, z0, Lx, Ly, ZD, ZTOP, ZBOT, outdir,
-                     soglia=None, riferimenti=None, delta_vuoto=5.0, prof_info=None):
-    """NEL GRAFICO SI SEGNANO SOLO I PUNTI VUOTO, generati PRIMA dalla forma
-    d'onda della prima polarizzazione richiesta (VV) e POI da quelle
-    successive (VH): per OGNI pol, per OGNI pixel dell'area (ny*nx, la
-    stessa griglia degli step 4-5) si prende lungo la profondita' il campione
-    dove l'INVILUPPO (ampiezza dell'analitico di Hilbert, calcolato dallo
-    step 5 sulla forma d'onda SEPARATA di quella pol) e' massimo -- il
-    "riflettore" piu' forte della colonna -- con la sua frequenza istantanea.
-    Il punto e' classificato PIENO (materiale interpretato come denso/solido)
-    se la frequenza e' SOTTO `soglia`, VUOTO (cavita'/aria) se e' sopra:
-    soglia di default = mediana delle frequenze di picco su tutti i punti
-    generati (sovrascrivibile con `soglia`). SOLO i punti VUOTO vengono
-    disegnati (una traccia per pol, nell'ordine di --pol); i PIENO non sono
-    disegnati ma restano nel .npz e nel cursore della soglia. Disegnato in 3D
-    alle ALTEZZE REALI (quota DEM - profondita'). In aggiunta, un OVERLAY
-    selezionabile (nascosto di default, si attiva dalla legenda o dal
-    pulsante dedicato) riempie con punti/linea ogni tratto VERTICALE che va
-    da una transizione PIENO->VUOTO alla successiva VUOTO->PIENO (per pol),
-    per visualizzare l'estensione in profondita' di ogni cavita' individuata.
+                     soglia=None, riferimenti=None, delta_vuoto=5.0, prof_info=None,
+                     isteresi=0.10, max_variazioni=10):
+    """NEL GRAFICO SI DISEGNANO SOLO I PUNTI DI VARIAZIONE SENSIBILE
+    PIENO<->VUOTO — nessun altro punto. La classificazione e' a SOGLIA NETTA
+    (binaria): frequenza istantanea SOTTO `soglia` = PIENO (denso/solido),
+    SOPRA = VUOTO (cavita'/aria); soglia di default = mediana delle frequenze
+    di picco (sovrascrivibile con `soglia`). Per OGNI polarizzazione
+    (nell'ordine di --pol) e per OGNI pixel si percorre la colonna verticale
+    con un TRIGGER DI SCHMITT: lo stato cambia solo quando la frequenza esce
+    dalla banda morta attorno alla soglia (`isteresi` = frazione dei campioni
+    del volume che vi ricade, banda in percentili -> scala-indipendente),
+    cosi' le oscillazioni attorno alla soglia NON generano punti. Tra le
+    candidate cosi' trovate si tengono SOLO le `max_variazioni` col salto di
+    frequenza piu' forte su tutto il volume (default 10): sono le uniche
+    disegnate. Passaggio PIENO->VUOTO scendendo = TETTO del vuoto
+    (colore scuro), VUOTO->PIENO = FONDO del vuoto (colore ambra); punto a
+    meta' tra i due campioni del cambio, alle ALTEZZE REALI (quota DEM -
+    profondita'). Due colori discreti, nessun gradiente. Il punto per pixel
+    al picco dell'inviluppo (con la sua classe binaria) resta nel .npz ma
+    NON e' disegnato; l'overlay 'riempimento vuoti' e' stato rimosso
+    (delta_vuoto e' accettato ma ignorato, retro-compatibilita' CLI).
     Vedi nota metodologica in cima al modulo: e' un'analisi ispirata al
     lessico Biondi-Malanga ma non e' la loro tomografia Doppler a
     sub-aperture."""
@@ -1714,11 +1862,11 @@ def step6_variazioni(freq_pol, env_pol, z, x_m, y_m, z0, Lx, Ly, ZD, ZTOP, ZBOT,
         log(f"[6] soglia PIENO/VUOTO (esplicita, --soglia): {soglia:.4f} 1/m")
     classe = np.where(pv < soglia, "pieno", "vuoto")
     n_pieno = int((classe == "pieno").sum()); n_vuoto = n - n_pieno
-    log(f"[6] classificazione: {n_vuoto} punti VUOTO (frequenza alta, gli UNICI "
-        f"segnati nel grafico: " +
+    log(f"[6] classificazione binaria dei punti al picco (solo .npz, non "
+        f"disegnati): {n_vuoto} VUOTO (" +
         ", ".join(f"{int(((ppol == p) & (classe == 'vuoto')).sum())} da {p.upper()}"
                   for p in pols) +
-        f"), {n_pieno} punti PIENO (non disegnati)")
+        f"), {n_pieno} PIENO; nel grafico si segnano SOLO i passaggi netti")
 
     # altezza dal livello 0 (quota>0) e profondita' dal livello 0 (quota<0)
     altezza = np.where(pz >= 0, pz, 0.0)
@@ -1727,96 +1875,101 @@ def step6_variazioni(freq_pol, env_pol, z, x_m, y_m, z0, Lx, Ly, ZD, ZTOP, ZBOT,
     log(f"[6] rispetto al livello 0: {n_sopra} punti sopra (altezza max "
         f"{altezza.max():.0f} m), {n_sotto} punti sotto (profondita' max "
         f"{profondita.max():.0f} m)")
+
+    # --- SOLO variazioni SENSIBILI PIENO<->VUOTO (soglia netta + ISTERESI) ---
+    # NEL GRAFICO SI DISEGNANO SOLO QUESTI PUNTI, nessun altro. Trigger di
+    # Schmitt lungo ogni colonna verticale: lo stato passa a VUOTO solo
+    # quando la frequenza SUPERA soglia*(1+isteresi), torna PIENO solo
+    # quando SCENDE sotto soglia*(1-isteresi). Le oscillazioni che restano
+    # dentro la banda [soglia*(1-i), soglia*(1+i)] NON generano punti:
+    # sopravvivono solo le variazioni sensibili. Tetto del vuoto = passaggio
+    # PIENO->VUOTO scendendo, fondo del vuoto = VUOTO->PIENO; punto a meta'
+    # tra i due campioni del cambio, alle altezze reali (DEM - profondita').
+    # banda morta in PERCENTILI della distribuzione di TUTTE le frequenze del
+    # volume (scala-indipendente): isteresi = frazione di campioni che ricade
+    # nella banda attorno alla soglia (default 0.10 = il 10% dei campioni
+    # piu' vicini alla soglia non genera mai punti). Una banda proporzionale
+    # alla soglia (soglia*(1±i)) sarebbe quasi nulla quando la soglia e'
+    # piccola rispetto alle escursioni della frequenza.
+    tutti = np.concatenate([freq_pol[p].ravel() for p in pols])
+    q0 = float((tutti <= soglia).mean())
+    s_basso = float(np.quantile(tutti, max(0.0, q0 - isteresi / 2)))
+    s_alto = float(np.quantile(tutti, min(1.0, q0 + isteresi / 2)))
+    del tutti
+    z_mid = (z[:-1] + z[1:]) / 2.0 if len(z) > 1 else z
+    tx_, ty_, tz_, tv_, tpol_, ttipo_, salto_ = [], [], [], [], [], [], []
+    for p in pols:
+        fr = freq_pol[p]
+        stato_pieno = fr[:, :, 0] < soglia       # stato iniziale: soglia semplice
+        for k in range(1, nz):
+            diventa_vuoto = stato_pieno & (fr[:, :, k] >= s_alto)
+            diventa_pieno = (~stato_pieno) & (fr[:, :, k] <= s_basso)
+            for tipo, mask in (("tetto", diventa_vuoto), ("fondo", diventa_pieno)):
+                if not mask.any():
+                    continue
+                ii, jj = np.nonzero(mask)
+                kv = k if tipo == "tetto" else k - 1     # campione lato VUOTO
+                tx_.append(x_m[jj]); ty_.append(y_m[ii])
+                tz_.append(z0[ii, jj] - z_mid[k - 1])
+                tv_.append(fr[ii, jj, kv])
+                # forza della variazione = salto di frequenza attraverso il
+                # confine (per la selezione globale delle N piu' forti)
+                salto_.append(np.abs(fr[ii, jj, k] - fr[ii, jj, k - 1]))
+                tpol_.append(np.full(ii.size, p, dtype=object))
+                ttipo_.append(np.full(ii.size, tipo, dtype=object))
+            stato_pieno = np.where(diventa_vuoto, False,
+                                   np.where(diventa_pieno, True, stato_pieno))
+    if tx_:
+        tx = np.concatenate(tx_); ty = np.concatenate(ty_); tz = np.concatenate(tz_)
+        tv = np.concatenate(tv_); tpol = np.concatenate(tpol_); ttipo = np.concatenate(ttipo_)
+        salto = np.concatenate(salto_)
+    else:
+        tx = ty = tz = tv = salto = np.array([])
+        tpol = ttipo = np.array([], dtype=object)
+    n_candidate = tx.size
+    # SELEZIONE GLOBALE: tra tutte le candidate sopravvissute all'isteresi si
+    # tengono SOLO le max_variazioni col salto di frequenza piu' forte, su
+    # tutto il volume (tutte le pol insieme): sono le uniche disegnate
+    if max_variazioni and tx.size > max_variazioni:
+        sel = np.argsort(-salto)[:max_variazioni]
+        tx, ty, tz, tv = tx[sel], ty[sel], tz[sel], tv[sel]
+        tpol, ttipo, salto = tpol[sel], ttipo[sel], salto[sel]
+    log(f"[6] variazioni SENSIBILI PIENO<->VUOTO: {n_candidate} candidate "
+        f"(isteresi {isteresi*100:.0f}%, banda morta [{s_basso:.4f}, {s_alto:.4f}] "
+        f"1/m) -> tenute le {tx.size} col salto di frequenza PIU' FORTE "
+        f"(--max-variazioni {max_variazioni}), UNICI punti disegnati: " +
+        "; ".join(f"{int(((tpol == p) & (ttipo == 'tetto')).sum())} tetti + "
+                  f"{int(((tpol == p) & (ttipo == 'fondo')).sum())} fondi da {p.upper()}"
+                  for p in pols) +
+        (f"; salto minimo tenuto {salto.min():.4f} 1/m" if tx.size else ""))
+
     np.savez_compressed(os.path.join(outdir, "variazioni_frequenza.npz"),
                         px=px, py=py, pz=pz, pv=pv, pol=ppol.astype(str), classe=classe,
                         altezza_dal_livello0=altezza, profondita_dal_livello0=profondita,
-                        soglia=soglia)
+                        trans_x=tx, trans_y=ty, trans_z=tz, trans_freq_vuoto=tv,
+                        trans_salto=salto,
+                        trans_pol=tpol.astype(str), trans_tipo=ttipo.astype(str),
+                        soglia=soglia, isteresi=isteresi,
+                        max_variazioni=max_variazioni, n_candidate=n_candidate)
 
-    # hover: quota s.l.m. + altezza/profondita' dal livello 0 + classe/pol per punto
+    # colori DISCRETI (soglia netta, nessun gradiente): tetto/fondo
+    COL_TETTO, COL_FONDO = "#0d0d12", "#b45309"
+
+    # hover dei punti di passaggio: quota + tipo di confine + forza + pol
     txt = []
-    for a, b, c, d, q, cl in zip(px, py, pz, pv, ppol, classe):
+    for a, b, c, d, q, tp, sl in zip(tx, ty, tz, tv, tpol, ttipo, salto):
         rel = (f"altezza dal livello 0: {c:.0f} m" if c >= 0
                else f"profondita' dal livello 0: {-c:.0f} m")
+        lab = ("passaggio NETTO PIENO->VUOTO (tetto del vuoto)" if tp == "tetto"
+               else "passaggio NETTO VUOTO->PIENO (fondo del vuoto)")
         txt.append(f"x={a:.0f} m, y={b:.0f} m<br>quota {c:+.0f} m s.l.m.<br>"
-                   f"{rel}<br>frequenza istantanea={d:.4f} 1/m<br>"
-                   f"{cl.upper()}<br>pol {q.upper()}")
+                   f"{rel}<br>{lab}<br>salto di frequenza={sl:.4f} 1/m<br>"
+                   f"frequenza lato vuoto={d:.4f} 1/m<br>pol {q.upper()}")
 
-    fmin = float(np.nanpercentile(pv, 2)); fmax = float(np.nanpercentile(pv, 98))
-    if fmax <= fmin:
-        fmax = fmin + 1e-6
-
-    # --- riempimento verticale dei vuoti (overlay selezionabile nel grafico) ---
-    # Per ogni pixel (i,j), lungo TUTTA la profondita' (non solo il picco usato
-    # sopra per il punto singolo) si segue la classificazione PIENO/VUOTO
-    # campione per campione sull'asse verticale z: quando si passa da PIENO a
-    # VUOTO si comincia a "riempire" quel tratto con punti/linea, quando si
-    # torna da VUOTO a PIENO ci si ferma (i vuoti che iniziano gia' al
-    # campione piu' superficiale, senza un PIENO sopra da cui scendere, non
-    # vengono riempiti: non c'e' una transizione nota da cui partire). E' un
-    # OVERLAY in aggiunta al punto-per-pixel sopra, non lo sostituisce: di
-    # default e' nascosto (visible='legendonly'), selezionabile dalla legenda
-    # o dal pulsante dedicato aggiunto sotto.
-    # una passata per POLARIZZAZIONE (stesso ordine dei punti: prima VV, poi
-    # VH), sulla forma d'onda separata di quella pol per TUTTA l'area
-    dz_fill = float(z[1] - z[0]) if len(z) > 1 else 1.0
-    passo_fill = max(1, int(round(delta_vuoto / dz_fill)))
-    fill_traces = []
-    n_fill_tot, n_disegnati = 0, 0
-    for p in pols:
-        pieno_full = freq_pol[p] < soglia                  # True = pieno, per campione
-        stato = np.zeros((ny, nx), dtype=bool)
-        riempi = np.zeros((ny, nx, nz), dtype=bool)
-        for k in range(nz):
-            is_p = pieno_full[:, :, k]
-            inizia_qui = (~is_p) & pieno_full[:, :, k - 1] if k > 0 else np.zeros((ny, nx), bool)
-            stato = np.where(is_p, False, np.where(inizia_qui, True, stato))
-            riempi[:, :, k] = stato & (~is_p)
-        n_fill = int(riempi.sum())
-        n_fill_tot += n_fill
-        if n_fill == 0:
-            continue
-        # delta_vuoto = distanza verticale [m] tra due punti disegnati lungo la
-        # stessa linea: il riempimento e' un overlay visivo, disegnare OGNI
-        # campione z (dz ~ ZD/NZ, di solito 1-2 m) appesantisce la pagina senza
-        # aggiungere leggibilita'. Si tiene un campione ogni `passo_fill` piu'
-        # SEMPRE l'ultimo del segmento, cosi' l'estensione del vuoto resta esatta.
-        gap = np.array([np.nan])
-        FX, FY, FZ, FC = [], [], [], []
-        for i in range(ny):
-            for j in range(nx):
-                col = riempi[i, j]
-                if not col.any():
-                    continue
-                idx = np.flatnonzero(col)
-                # segmenti contigui distinti nella stessa colonna: piu' vuoti
-                # separati da un tratto PIENO restano segmenti separati (gap)
-                splits = np.flatnonzero(np.diff(idx) > 1) + 1
-                for run in np.split(idx, splits):
-                    sel = run[::passo_fill]
-                    if sel[-1] != run[-1]:
-                        sel = np.append(sel, run[-1])
-                    n_disegnati += len(sel)
-                    FX.append(np.full(len(sel), x_m[j])); FX.append(gap)
-                    FY.append(np.full(len(sel), y_m[i])); FY.append(gap)
-                    FZ.append(z0[i, j] - z[sel]); FZ.append(gap)
-                    FC.append(freq_pol[p][i, j, sel]); FC.append(gap)
-        fill_traces.append(go.Scatter3d(
-            x=np.concatenate(FX), y=np.concatenate(FY), z=np.concatenate(FZ),
-            mode="lines+markers", connectgaps=False,
-            line=dict(width=4, color=np.concatenate(FC), colorscale=PIENO_VUOTO_COLORSCALE,
-                      cmin=fmin, cmax=fmax, showscale=False),
-            marker=dict(size=2.2, color=np.concatenate(FC), colorscale=PIENO_VUOTO_COLORSCALE,
-                       cmin=fmin, cmax=fmax, showscale=False),
-            name=f"riempimento vuoti {p.upper()} (clicca in legenda per mostrare)",
-            visible="legendonly"))
-    log(f"[6] riempimento verticale dei vuoti: {n_fill_tot} campioni "
-        f"({100*n_fill_tot/(pixel_area*nz*len(pols)):.1f}% del volume z x pol) tra le "
-        f"transizioni PIENO->VUOTO e VUOTO->PIENO (overlay per pol, nascosto di default)")
-    if n_fill_tot > 0:
-        log(f"[6] overlay vuoti: un punto ogni {passo_fill * dz_fill:.1f} m in "
-            f"verticale (--delta-vuoto {delta_vuoto:.1f} m, passo {passo_fill} "
-            f"campioni) -> {n_disegnati} punti disegnati invece di {n_fill_tot}")
-
+    # (l'overlay "riempimento verticale dei vuoti" e' stato RIMOSSO: nel
+    # grafico si disegnano SOLO i punti di variazione sensibile, nessun
+    # punto aggiuntivo; delta_vuoto resta nella firma solo per
+    # retro-compatibilita' della CLI ed e' ignorato)
     Xg, Yg = np.meshgrid(x_m, y_m)
     ground = go.Scatter3d(x=Xg.ravel(), y=Yg.ravel(), z=z0.ravel(), mode="markers",
                           marker=dict(size=1.2, color="red"), name="suolo (DEM)")
@@ -1826,27 +1979,23 @@ def step6_variazioni(freq_pol, env_pol, z, x_m, y_m, z0, Lx, Ly, ZD, ZTOP, ZBOT,
                             colorscale=[[0, "gray"], [1, "gray"]],
                             name="livello 0 (s.l.m.)")
     extra_traces = _tracce_riferimenti(riferimenti) if riferimenti else []
-    # nel grafico si SEGNANO SOLO I PUNTI VUOTO: una traccia per pol,
-    # nell'ordine di generazione (traccia 0 = VUOTO dalla prima pol, es. VV;
-    # traccia 1 = VUOTO dalla seconda, es. VH). I PIENO non sono disegnati
-    # (restano in .npz e nel cursore della soglia, che risuddivide le tracce).
+    # nel grafico si SEGNANO SOLO I PUNTI DI PASSAGGIO NETTO PIENO<->VUOTO:
+    # due tracce per pol (tetto = PIENO->VUOTO scuro, fondo = VUOTO->PIENO
+    # ambra), colori DISCRETI senza gradiente. Il punto-per-pixel al picco
+    # dell'inviluppo resta solo nel .npz.
     txt_arr = np.array(txt, dtype=object)
-    tracce_vuoto = []
-    for k, p in enumerate(pols):
-        m = (ppol == p) & (classe == "vuoto")
-        tracce_vuoto.append(go.Scatter3d(
-            x=px[m], y=py[m], z=pz[m], mode="markers",
-            name=f"VUOTO {p.upper()} ({int(m.sum())} punti)",
-            text=list(txt_arr[m]), hoverinfo="text",
-            marker=dict(size=2.4, color=pv[m], colorscale=PIENO_VUOTO_COLORSCALE,
-                        cmin=fmin, cmax=fmax, opacity=0.9,
-                        colorbar=_colorbar_pieno_vuoto(fmin, fmax) if k == 0 else None,
-                        showscale=(k == 0))))
-    traces = [*tracce_vuoto, zero_plane, ground, *extra_traces]
-    idx_fill = None
-    if fill_traces:
-        idx_fill = list(range(len(traces), len(traces) + len(fill_traces)))
-        traces.extend(fill_traces)
+    tracce_trans = []
+    for p in pols:
+        for tipo, colore, etich in (
+                ("tetto", COL_TETTO, "passaggio PIENO->VUOTO (tetto)"),
+                ("fondo", COL_FONDO, "passaggio VUOTO->PIENO (fondo)")):
+            m = (tpol == p) & (ttipo == tipo)
+            tracce_trans.append(go.Scatter3d(
+                x=tx[m], y=ty[m], z=tz[m], mode="markers",
+                name=f"{etich} {p.upper()} ({int(m.sum())} punti)",
+                text=list(txt_arr[m]), hoverinfo="text",
+                marker=dict(size=2, color=colore, opacity=0.95)))
+    traces = [*tracce_trans, zero_plane, ground, *extra_traces]
     fig = go.Figure(traces)
     _tema_plotly(fig)
     fig.update_layout(
@@ -1855,48 +2004,37 @@ def step6_variazioni(freq_pol, env_pol, z, x_m, y_m, z0, Lx, Ly, ZD, ZTOP, ZBOT,
                    zaxis=dict(range=[ZBOT, ZTOP]),
                    aspectmode="manual",
                    aspectratio=dict(x=1.0, y=Ly / Lx, z=(ZTOP - ZBOT) / Lx)))
-    if idx_fill is not None:
-        # pulsante dedicato (in aggiunta al toggle dalla legenda) per mostrare
-        # /nascondere il riempimento verticale dei vuoti (tutte le pol insieme)
-        fig.update_layout(updatemenus=[dict(
-            type="buttons", direction="left", x=0.99, y=0.99,
-            xanchor="right", yanchor="top",
-            bgcolor=TEMA_UI["pannello"], bordercolor=TEMA_UI["bordo"],
-            font=dict(color=TEMA_UI["testo"], size=12),
-            buttons=[
-                dict(label="Riempimento vuoti: ON", method="restyle",
-                     args=[{"visible": True}, idx_fill]),
-                dict(label="Riempimento vuoti: OFF", method="restyle",
-                     args=[{"visible": "legendonly"}, idx_fill]),
-            ])])
     # --- pulsante per esportare i 2 piani di sezione (E-W e N-S) del punto in fuoco ---
     dx = float(np.min(np.diff(x_m))) if len(x_m) > 1 else 1.0
     dy = float(np.min(np.diff(y_m))) if len(y_m) > 1 else 1.0
-    cs = dict(PX=[round(float(v), 2) for v in px],
-              PY=[round(float(v), 2) for v in py],
-              PZ=[round(float(v), 2) for v in pz],
-              PV=[round(float(v), 5) for v in pv],
-              PPOL=[str(q) for q in ppol],
+    cs = dict(PX=[round(float(v), 2) for v in tx],
+              PY=[round(float(v), 2) for v in ty],
+              PZ=[round(float(v), 2) for v in tz],
+              PV=[round(float(v), 5) for v in tv],
+              PTIPO=[str(q) for q in ttipo],
+              PPOL=[str(q) for q in tpol],
               POLS=[str(p) for p in pols],
               TOLX=dx / 2.0, TOLY=dy / 2.0,
-              SOGLIA=round(float(soglia), 6),
-              FMIN=round(fmin, 6), FMAX=round(fmax, 6))
+              SOGLIA=round(float(soglia), 6))
     post_script = """
 var gd = document.getElementById('{plot_id}');
 var CS = __CSDATA__;
 var sel = {x: null, y: null, z: null};
-// colorscale continua PIENO/VUOTO (stessa di PIENO_VUOTO_COLORSCALE lato Python):
-// frequenza bassa = PIENO (chiaro), frequenza alta = VUOTO (scuro)
-var PVCS = [[0.0,'#f5ecd7'],[0.5,'#8a7862'],[1.0,'#0d0d12']];
+// colori DISCRETI dei passaggi netti (stessi del grafico 3D lato Python):
+// tetto = PIENO->VUOTO (scuro), fondo = VUOTO->PIENO (ambra)
+var COLTIPO = {tetto:'#0d0d12', fondo:'#b45309'};
 
 var bar = document.createElement('div');
-bar.style.cssText = 'position:fixed;bottom:14px;left:14px;z-index:50;' +
-    'background:rgba(255,255,255,0.95);color:#0f172a;padding:10px 12px;' +
-    'border:1px solid #e2e8f0;border-radius:10px;' +
-    "font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;" +
-    'box-shadow:0 4px 16px rgba(15,23,42,0.15)';
+// ancorato all'area del GRAFICO (main), non alla finestra: cosi' resta in
+// basso a sinistra DENTRO il canvas e non si sovrappone al footer con la
+// descrizione e le opzioni della pagina
+bar.style.cssText = 'position:absolute;bottom:12px;left:12px;top:auto;right:auto;z-index:50;' +
+    'background:rgba(255,255,255,0.93);color:#0f172a;padding:7px 9px;' +
+    'border:1px solid #e2e8f0;border-radius:9px;max-width:215px;' +
+    "font-family:'Segoe UI',system-ui,sans-serif;font-size:12px;" +
+    'box-shadow:0 3px 12px rgba(15,23,42,0.13)';
 var info = document.createElement('div');
-info.style.cssText = 'margin-bottom:7px;color:#475569';
+info.style.cssText = 'margin-bottom:5px;color:#475569';
 info.textContent = 'Clicca un punto per dargli il fuoco';
 var btn = document.createElement('button');
 btn.textContent = 'Salva piani E-W & N-S (PNG)';
@@ -1912,7 +2050,9 @@ btn.onmouseenter = function(){ if(!btn.disabled) btn.style.opacity = '0.85'; };
 btn.onmouseleave = aggiornaBtn;
 aggiornaBtn();
 bar.appendChild(info); bar.appendChild(btn);
-document.body.appendChild(bar);
+var host = document.querySelector('main') || document.body;
+host.style.position = 'relative';
+host.appendChild(bar);
 
 gd.on('plotly_click', function(d){
     if(!d || !d.points || !d.points.length) return;
@@ -1925,97 +2065,31 @@ gd.on('plotly_click', function(d){
     aggiornaBtn();
 });
 
-// ---- cursore per REGOLARE la soglia PIENO/VUOTO (trace 0 = punti per pixel) ----
+// ---- soglia PIENO/VUOTO FISSA e NETTA (nessun cursore continuo): i punti ----
+// segnati sono SOLO i passaggi netti tra PIENO e VUOTO, gia' calcolati con
+// questa soglia binaria
 var box2 = document.createElement('div');
-box2.style.cssText = 'margin-top:10px;padding-top:9px;border-top:1px solid #e2e8f0;max-width:250px';
-var slLab = document.createElement('div');
-slLab.style.cssText = 'margin-bottom:6px;color:#0f172a;line-height:1.4';
-var sl = document.createElement('input');
-sl.type = 'range';
-sl.min = CS.FMIN; sl.max = CS.FMAX;
-sl.step = (CS.FMAX - CS.FMIN) / 400;
-sl.value = CS.SOGLIA;
-sl.setAttribute('aria-label', 'Soglia PIENO/VUOTO [1/m]');
-sl.style.cssText = 'display:block;width:100%;cursor:pointer;accent-color:#f5b942';
-var slReset = document.createElement('button');
-slReset.textContent = 'Ripristina (soglia iniziale, colore continuo)';
-slReset.style.cssText = 'margin-top:7px;padding:4px 10px;font-size:12px;cursor:pointer;' +
-    'border:1px solid #e2e8f0;border-radius:8px;background:transparent;color:#475569;' +
-    'transition:color .2s ease,border-color .2s ease';
-slReset.onmouseenter = function(){ slReset.style.color = '#0f172a'; slReset.style.borderColor = '#94a3b8'; };
-slReset.onmouseleave = function(){ slReset.style.color = '#475569'; slReset.style.borderColor = '#e2e8f0'; };
-var slHint = document.createElement('div');
-slHint.style.cssText = 'margin-top:6px;font-size:11.5px;color:#475569;line-height:1.4';
-slHint.textContent = "I punti disegnati sono SOLO i VUOTO (frequenza sopra " +
-    "soglia), generati prima da " + CS.POLS[0].toUpperCase() +
-    (CS.POLS.length > 1 ? " e poi da " + CS.POLS.slice(1).join('/').toUpperCase() : "") +
-    "; i PIENO non sono disegnati. Muovendo il cursore la selezione " +
-    "si aggiorna; l'overlay 'riempimento dei vuoti' resta calcolato con la " +
-    "soglia iniziale.";
-
-function contaPieni(s){
-    var n = 0;
-    for(var i = 0; i < CS.PV.length; i++) if(CS.PV[i] < s) n++;
-    return n;
-}
-function testoPunto(i, classe){
-    var q = CS.PZ[i];
-    var rel = (q >= 0 ? 'altezza dal livello 0: ' + Math.round(q)
-                      : "profondita' dal livello 0: " + Math.round(-q)) + ' m';
-    return 'x=' + Math.round(CS.PX[i]) + ' m, y=' + Math.round(CS.PY[i]) + ' m<br>' +
-        'quota ' + (q >= 0 ? '+' : '−') + Math.abs(Math.round(q)) + ' m s.l.m.<br>' +
-        rel + '<br>frequenza istantanea=' + CS.PV[i].toFixed(4) + ' 1/m<br>' +
-        classe + '<br>pol ' + CS.PPOL[i].toUpperCase();
-}
-function etichettaSoglia(s, extra){
-    var np_ = contaPieni(s);
-    slLab.textContent = 'Soglia PIENO/VUOTO: ' + s.toFixed(4) + ' 1/m' + (extra || '') +
-        ' — VUOTO ' + (CS.PV.length - np_) + ' (punti segnati) / PIENO ' +
-        np_ + ' (non disegnati)';
-}
-// rialimenta le tracce dei VUOTO, una per polarizzazione (traccia 0 = prima
-// pol, es. VV; traccia 1 = seconda, es. VH): SOLO i punti sopra soglia sono
-// disegnati, i PIENO non compaiono in nessuna traccia
-function applicaSoglia(s, extra){
-    var upd = [];
-    for(var t = 0; t < CS.POLS.length; t++) upd.push({X:[],Y:[],Z:[],C:[],T:[]});
-    for(var i = 0; i < CS.PV.length; i++){
-        if(CS.PV[i] < s) continue;                      // PIENO: non disegnato
-        var t = CS.POLS.indexOf(CS.PPOL[i]);
-        if(t < 0) continue;
-        upd[t].X.push(CS.PX[i]); upd[t].Y.push(CS.PY[i]); upd[t].Z.push(CS.PZ[i]);
-        upd[t].C.push(CS.PV[i]); upd[t].T.push(testoPunto(i, 'VUOTO'));
-    }
-    etichettaSoglia(s, extra);
-    for(var t = 0; t < CS.POLS.length; t++){
-        Plotly.restyle(gd, {x:[upd[t].X], y:[upd[t].Y], z:[upd[t].Z],
-                            'marker.color':[upd[t].C], text:[upd[t].T],
-                            name:['VUOTO ' + CS.POLS[t].toUpperCase() +
-                                  ' (' + upd[t].X.length + ' punti)']}, [t]);
-    }
-}
-sl.oninput = function(){ applicaSoglia(parseFloat(sl.value)); };
-slReset.onclick = function(){
-    sl.value = CS.SOGLIA;
-    applicaSoglia(CS.SOGLIA, ' (iniziale)');
-};
-etichettaSoglia(CS.SOGLIA, ' (iniziale)');
-box2.appendChild(slLab); box2.appendChild(sl);
-box2.appendChild(slReset); box2.appendChild(slHint);
+box2.style.cssText = 'margin-top:6px;padding-top:5px;border-top:1px solid #e2e8f0;' +
+    'font-size:11px;color:#475569;line-height:1.45';
+box2.innerHTML = 'Soglia netta <b>' + CS.SOGLIA.toFixed(4) + ' 1/m</b> — ' +
+    '<span style="color:' + COLTIPO.tetto + ';font-weight:600">tetto</span>/' +
+    '<span style="color:' + COLTIPO.fondo + ';font-weight:600">fondo</span> dei vuoti';
 bar.appendChild(box2);
 
 btn.onclick = function(){
     if(sel.x === null) return;
     var ewx=[], ewz=[], ewc=[], nsy=[], nsz=[], nsc=[];
     for(var i=0; i<CS.PX.length; i++){
-        if(Math.abs(CS.PY[i] - sel.y) <= CS.TOLY){ ewx.push(CS.PX[i]); ewz.push(CS.PZ[i]); ewc.push(CS.PV[i]); }
-        if(Math.abs(CS.PX[i] - sel.x) <= CS.TOLX){ nsy.push(CS.PY[i]); nsz.push(CS.PZ[i]); nsc.push(CS.PV[i]); }
+        if(Math.abs(CS.PY[i] - sel.y) <= CS.TOLY){ ewx.push(CS.PX[i]); ewz.push(CS.PZ[i]); ewc.push(COLTIPO[CS.PTIPO[i]]); }
+        if(Math.abs(CS.PX[i] - sel.x) <= CS.TOLX){ nsy.push(CS.PY[i]); nsz.push(CS.PZ[i]); nsc.push(COLTIPO[CS.PTIPO[i]]); }
     }
+    // colori DISCRETI per tipo di passaggio (scuro = tetto, ambra = fondo):
+    // nessuna scala continua, la soglia PIENO/VUOTO e' netta
     var t1 = {type:'scatter', mode:'markers', x:ewx, y:ewz, name:'E-W',
-        marker:{size:5, color:ewc, colorscale:PVCS, colorbar:{title:'freq. (PIENO..VUOTO)', x:1.0, len:0.9}},
+        marker:{size:3, color:ewc},
         xaxis:'x', yaxis:'y'};
     var t2 = {type:'scatter', mode:'markers', x:nsy, y:nsz, name:'N-S',
-        marker:{size:5, color:nsc, colorscale:PVCS, showscale:false},
+        marker:{size:3, color:nsc},
         xaxis:'x2', yaxis:'y2'};
     var layout = {
         width:1300, height:600, showlegend:false,
@@ -2050,29 +2124,32 @@ btn.onclick = function(){
 
     _scrivi_pagina_html(
         fig, os.path.join(outdir, "step6_variazioni_3d.html"),
-        titolo="Step 6 — Solo punti VUOTO ("
+        titolo="Step 6 — Variazioni sensibili PIENO/VUOTO ("
                + " poi ".join(p.upper() for p in pols) + ")",
-        sottotitolo="Per ogni polarizzazione (prima "
+        sottotitolo="Classificazione a SOGLIA NETTA (binaria) della frequenza "
+                    "istantanea con ISTERESI: per ogni polarizzazione (prima "
                     + ", poi ".join(p.upper() for p in pols) +
-                    "), un punto per pixel dell'area alla profondita' del "
-                    "riflettore piu' forte della sua forma d'onda: nel "
-                    "grafico sono SEGNATI SOLO I VUOTI (frequenza istantanea "
-                    "alta, scuro), una traccia per pol; i PIENO non sono "
-                    "disegnati. Livello 0 = mare. Il CURSORE in basso a "
-                    "sinistra regola la soglia PIENO/VUOTO in tempo reale; "
-                    "clicca un punto per dargli il fuoco ed esportare i "
-                    "piani di sezione E-W / N-S; il riempimento dei vuoti "
-                    "(per pol) si attiva dal pulsante in alto a destra o "
-                    "dalla legenda. La profondita' del grafico e' limitata "
-                    "alla z_amb del dato sorgente (oltre, l'inversione di "
-                    "Fourier va in alias).",
-        badges=[("punti VUOTO (segnati)",
-                 " + ".join(f"{int(((ppol == p) & (classe == 'vuoto')).sum())} {p.upper()}"
+                    ") e per ogni pixel si percorre la colonna verticale con "
+                    "un trigger di Schmitt (le oscillazioni dentro la banda "
+                    "di isteresi attorno alla soglia non contano); tra le "
+                    "candidate si DISEGNANO SOLO LE VARIAZIONI COL SALTO DI "
+                    "FREQUENZA PIU' FORTE di tutto il volume "
+                    "(--max-variazioni): tetto del vuoto (passaggio "
+                    "PIENO->VUOTO, scuro) e fondo del vuoto (VUOTO->PIENO, "
+                    "ambra), due colori discreti, nessun altro punto "
+                    "aggiunto. Livello 0 = mare. Clicca un punto per dargli "
+                    "il fuoco ed esportare i piani di sezione E-W / N-S. La "
+                    "profondita' del grafico e' limitata alla z_amb del dato "
+                    "sorgente (oltre, l'inversione di Fourier va in alias).",
+        badges=[("variazioni disegnate (le piu' forti)",
+                 " + ".join(f"{int((tpol == p).sum())} {p.upper()}"
                             for p in pols)),
-                ("PIENO (non disegnati)", n_pieno),
-                ("soglia", f"{soglia:.4f} 1/m"),
-                ("base", f"{Lx:.0f}×{Ly:.0f} m"),
-                ("delta vuoti", f"{delta_vuoto:.1f} m")]
+                ("tetti (PIENO->VUOTO)", int((ttipo == "tetto").sum())),
+                ("fondi (VUOTO->PIENO)", int((ttipo == "fondo").sum())),
+                ("candidate scartate", n_candidate - int(tx.size)),
+                ("soglia netta", f"{soglia:.4f} 1/m"),
+                ("max variazioni", max_variazioni),
+                ("base", f"{Lx:.0f}×{Ly:.0f} m")]
                + ([("profondita' max fonte (z_amb)", f"{ZD:.0f} m"),
                    ("dz tomografica", f"{prof_info[2]:.0f} m"),
                    ("sorgente", prof_info[0])] if prof_info else []),
@@ -2086,15 +2163,17 @@ btn.onclick = function(){
 
     figm = plt.figure(figsize=(8, 9)); ax = figm.add_subplot(111, projection="3d")
     ax.scatter(Xg.ravel(), Yg.ravel(), z0.ravel(), c="red", s=2, depthshade=False)
-    m_vuoto = classe == "vuoto"
-    sc = ax.scatter(px[m_vuoto], py[m_vuoto], pz[m_vuoto], c=pv[m_vuoto],
-                    cmap=_cmap_pieno_vuoto(), vmin=fmin, vmax=fmax, s=2.0)
+    for tipo, colore, lab in (("tetto", COL_TETTO, "PIENO->VUOTO (tetto)"),
+                              ("fondo", COL_FONDO, "VUOTO->PIENO (fondo)")):
+        m = ttipo == tipo
+        ax.scatter(tx[m], ty[m], tz[m], c=colore, s=2.0, depthshade=False,
+                   label=f"{lab}: {int(m.sum())}")
     ax.set_xlabel("x E-W [m]"); ax.set_ylabel("y N-S [m]"); ax.set_zlabel("quota s.l.m. [m]")
     ax.set_zlim(ZBOT, ZTOP); ax.set_box_aspect((Lx, Ly, ZTOP - ZBOT))
-    ax.set_title(f"Step 6 — solo punti VUOTO ({' poi '.join(p.upper() for p in pols)}), "
-                 f"{n_vuoto} su {n} generati")
-    figm.colorbar(sc, ax=ax, shrink=0.5,
-                  label="frequenza istantanea (scuro=VUOTO)")
+    ax.set_title(f"Step 6 — variazioni sensibili PIENO/VUOTO "
+                 f"({' poi '.join(p.upper() for p in pols)}), {tx.size} punti, "
+                 f"soglia {soglia:.4f} 1/m, isteresi ±{isteresi*100:.0f}%")
+    ax.legend(loc="upper left", fontsize=8)
     figm.savefig(os.path.join(outdir, "step6_variazioni_3d.png"), dpi=120,
                  bbox_inches="tight")
     plt.close(figm)
@@ -2192,12 +2271,24 @@ def main():
                          "PIENO, sopra la quale e' VUOTO. Default automatico = mediana "
                          "delle frequenze di picco su tutta l'area")
     ap.add_argument("--delta-vuoto", type=float, default=5.0,
-                    help="step 6: distanza verticale [m] tra i punti disegnati "
-                         "nell'overlay 'riempimento dei vuoti' (default 5.0; "
-                         "prima veniva disegnato OGNI campione z, ~1-2 m). "
-                         "Valori piu' alti = meno punti per linea verticale = "
-                         "pagina piu' leggera; l'ultimo punto di ogni segmento "
-                         "e' sempre disegnato, l'estensione dei vuoti resta esatta")
+                    help="OBSOLETO (ignorato): l'overlay 'riempimento dei vuoti' "
+                         "e' stato rimosso, nel grafico dello step 6 si "
+                         "disegnano SOLO le variazioni sensibili PIENO<->VUOTO")
+    ap.add_argument("--max-variazioni", type=int, default=1000,
+                    help="step 6: numero MASSIMO di variazioni PIENO<->VUOTO "
+                         "disegnate nel grafico: tra tutte le candidate "
+                         "sopravvissute all'isteresi si tengono solo le N col "
+                         "salto di frequenza piu' forte su tutto il volume "
+                         "(default 10). 0 = nessun limite")
+    ap.add_argument("--isteresi", type=float, default=0.10,
+                    help="step 6: banda morta del trigger di Schmitt che "
+                         "seleziona le variazioni sensibili PIENO<->VUOTO, "
+                         "espressa come FRAZIONE DEI CAMPIONI del volume di "
+                         "frequenze che ricade nella banda attorno alla soglia "
+                         "(default 0.10 = il 10%% dei campioni piu' vicini "
+                         "alla soglia non genera punti). Lo stato cambia solo "
+                         "quando la frequenza esce dalla banda; le oscillazioni "
+                         "interne non contano. 0 = ogni attraversamento conta")
     ap.add_argument("--nz", type=int, default=256,
                     help="step 5: risoluzione verticale (campioni in profondita') "
                          "dell'anti-trasformata di Fourier, calcolata a risoluzione "
@@ -2223,8 +2314,10 @@ def main():
                     help="oltre agli step scelti, esegue ANCHE la tomografia Doppler "
                          "vera del paper (skills/sar-doppler-tomography), coerente col "
                          "metodo Biondi-Malanga (steering matrix + h(z)=A^H*Y)")
-    ap.add_argument("--zmax", type=float, default=8.5,
-                    help="profondita' massima [m] per --vera-tomografia (resta sotto z_amb!)")
+    ap.add_argument("--zmax", type=float, default=200.0,
+                    help="profondita' massima [m] per --vera-tomografia (resta sotto z_amb, "
+                         "stampato a video: per Sentinel-1 IW ~660 m con klook=12, non piu' "
+                         "~8.5 m -- vedi CLAUDE.md, sezione metodologica)")
     ap.add_argument("--klook", type=int, default=12,
                     help="numero di sub-aperture Doppler (look tomografici) per --vera-tomografia")
     ap.add_argument("--ovs", type=float, default=4.0,
@@ -2249,7 +2342,15 @@ def main():
     preset_dir = PRESETS[a.pyramid]["outdir_name"] if a.pyramid else "goal_out"
     base_dir = os.path.join(here, preset_dir)
     outdir = a.outdir or os.path.join(base_dir, "unificato")
-    stackdir = a.stack or os.path.join(base_dir, "stack_slc")
+    # i TIFF dello stack possono stare in una cartella condivisa con un'altra
+    # piramide (stack_outdir_name nel preset, es. Cheope -> stack di Kefren):
+    # le scene S1 coprono tutta Giza e il download non va duplicato
+    stack_base = (PRESETS[a.pyramid].get("stack_outdir_name", preset_dir)
+                  if a.pyramid else preset_dir)
+    stackdir = a.stack or os.path.join(here, stack_base, "stack_slc")
+    if stack_base != preset_dir and not a.stack:
+        log(f"(stack condiviso: i TIFF di '{a.pyramid}' sono cercati in "
+            f"{stackdir})")
     fallback_box = os.path.join(base_dir, "box.npz")
     boxpath = os.path.join(outdir, "box.npz")
     os.makedirs(outdir, exist_ok=True)
@@ -2311,7 +2412,8 @@ def main():
             if 6 in steps:
                 step6_variazioni(freq_pol, env_pol, z, x_m, y_m, z0, Lx, Ly, ZD, ZTOP, ZBOT,
                                  outdir, soglia=a.soglia, riferimenti=riferimenti,
-                                 delta_vuoto=a.delta_vuoto, prof_info=prof_info)
+                                 delta_vuoto=a.delta_vuoto, prof_info=prof_info,
+                                 isteresi=a.isteresi, max_variazioni=a.max_variazioni)
 
     if a.vera_tomografia:
         step_vera_tomografia(a.nw, a.nw_lon, a.se, a.se_lon, stackdir, outdir,
