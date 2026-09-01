@@ -592,6 +592,14 @@ class Config:
     # l'unica usata nel calcolo tomografico (fase, k_z, geocodifica).
     # F39: il layer e' terreno + PROFILO DELLE PIRAMIDI, con il datum preso
     # dalle quote lette negli annotation.xml dello stack (ground_dem_suolo()).
+    # --- F40: radiometria dai .xml di calibrazione e rumore ----------------
+    # I prodotti .SAFE portano calibration-*.xml (sigmaNought) e noise-*.xml
+    # (NESZ). Applicarli converte i conteggi DN in sigma0 e toglie il rumore
+    # termico dall'intensita'. La fase non cambia -- si divide per un reale
+    # positivo -- quindi baseline, k_z e quote restano identici: cambia solo
+    # la radiometria, che in VH cross-pol e' proprio dove sta il problema.
+    calibrazione: bool = True
+
     suolo_dem: bool = True            # produce il layer (anche senza rete)
     fetch_dem: bool = True            # aggiunge il rilievo del DEM esterno
     dem_pyramids: bool = True         # F39: il suolo segue le piramidi
@@ -1138,14 +1146,139 @@ def target_window(ann: S1Annotation, geo: Geocoder, cfg: Config,
     return ChipWindow(l0, l1, p0, p1), burst
 
 
-def read_window(entry: StackEntry, win: ChipWindow, burst: int) -> Chip:
+@dataclass
+class LutRadiometrica:
+    """Una tabella di calibrazione o di rumore, sul reticolo sparso dello .xml.
+
+    Sentinel-1 distribuisce entrambe come vettori campionati: alcune decine di
+    righe in azimuth, qualche centinaio di colonne in range. Fra i nodi si
+    interpola bilinearmente sulle coordinate ASSOLUTE del prodotto, perche' e'
+    a quelle che si riferiscono e non al ritaglio."""
+
+    lines: np.ndarray                  # [n_l] righe dei nodi
+    pixels: np.ndarray                 # [n_p] colonne dei nodi
+    valori: np.ndarray                 # [n_l, n_p]
+
+    def valuta(self, l0: int, p0: int, n_l: int, n_p: int) -> np.ndarray:
+        """La tabella interpolata sul ritaglio [l0:l0+n_l, p0:p0+n_p]."""
+        ll = np.arange(l0, l0 + n_l, dtype=np.float64)
+        pp = np.arange(p0, p0 + n_p, dtype=np.float64)
+        # interpolazione separabile: prima in range su ogni riga di nodi, poi
+        # in azimuth fra le righe. Fuori dal reticolo si estende il bordo.
+        per_riga = np.empty((len(self.lines), n_p), dtype=np.float64)
+        for i in range(len(self.lines)):
+            per_riga[i] = np.interp(pp, self.pixels, self.valori[i])
+        if len(self.lines) == 1:
+            return np.repeat(per_riga, n_l, axis=0).astype(np.float32)
+        fuori = np.clip(np.searchsorted(self.lines, ll) - 1,
+                        0, len(self.lines) - 2)
+        l_lo = self.lines[fuori]
+        l_hi = self.lines[fuori + 1]
+        w = np.clip((ll - l_lo) / np.maximum(l_hi - l_lo, 1e-9), 0.0, 1.0)
+        out = (per_riga[fuori] * (1.0 - w[:, None])
+               + per_riga[fuori + 1] * w[:, None])
+        return out.astype(np.float32)
+
+
+def _vettori(root: ET.Element, tag_lista: str, tag_pixel: str,
+             tag_valori: str) -> Optional[LutRadiometrica]:
+    """Raccoglie i vettori omonimi di uno .xml in una LutRadiometrica."""
+    nodi = root.findall(f".//{tag_lista}")
+    if not nodi:
+        return None
+    lines: List[float] = []
+    pixels: Optional[np.ndarray] = None
+    righe: List[np.ndarray] = []
+    for v in nodi:
+        t_val = v.findtext(tag_valori)
+        t_pix = v.findtext(tag_pixel)
+        if not t_val or not t_pix:
+            continue
+        val = np.array([float(x) for x in t_val.split()], dtype=np.float64)
+        pix = np.array([float(x) for x in t_pix.split()], dtype=np.float64)
+        if pixels is None:
+            pixels = pix
+        elif len(pix) != len(pixels):
+            val = np.interp(pixels, pix, val)
+        lines.append(float(_txt(v, "line").split()[0]))
+        righe.append(val)
+    if pixels is None or not righe:
+        return None
+    ordine = np.argsort(lines)
+    return LutRadiometrica(lines=np.array(lines)[ordine], pixels=pixels,
+                           valori=np.array(righe)[ordine])
+
+
+def leggi_calibrazione(path: str) -> Optional[LutRadiometrica]:
+    """La tabella sigmaNought dal calibration-*.xml.
+
+    Il DN complesso dello SLC si converte in ampiezza calibrata dividendo per
+    questo fattore: sigma0 = |DN / A_sigma|^2. E' una divisione per un numero
+    REALE e positivo, quindi la FASE non cambia: baseline, k_z e quote non ne
+    risentono, ne risente solo la radiometria."""
+    try:
+        root = ET.parse(path).getroot()
+    except Exception:                                   # pragma: no cover
+        return None
+    return _vettori(root, "calibrationVector", "pixel", "sigmaNought")
+
+
+def leggi_rumore(path: str) -> Optional[LutRadiometrica]:
+    """Il rumore termico dal noise-*.xml, in unita' di DN^2.
+
+    Il prodotto porta un profilo in range (noiseRangeVector) e un profilo di
+    modulazione in azimuth (noiseAzimuthVector); qui si usa il primo, che e'
+    quello che descrive la rampa del NESZ attraverso lo swath, ed e' il termine
+    dominante. Serve per sottrarre il pavimento di rumore dall'intensita': in
+    VH cross-pol sul deserto il segnale ci sta sopra di pochissimo."""
+    try:
+        root = ET.parse(path).getroot()
+    except Exception:                                   # pragma: no cover
+        return None
+    lut = _vettori(root, "noiseRangeVector", "pixel", "noiseRangeLut")
+    if lut is None:                                     # prodotti IPF vecchi
+        lut = _vettori(root, "noiseVector", "pixel", "noiseLut")
+    return lut
+
+
+def read_window(entry: StackEntry, win: ChipWindow, burst: int,
+                calibra: bool = False) -> Chip:
+    """Legge il ritaglio dello SLC, opzionalmente calibrato in ampiezza.
+
+    Con `calibra` il DN viene diviso per sigmaNought, cosi' che |dato|^2 sia
+    sigma0 e non un numero di conteggi arbitrario. La fase resta intatta."""
     import rasterio
     from rasterio.windows import Window
 
     with rasterio.open(entry.tiff) as ds:
         arr = ds.read(1, window=Window(win.p0, win.l0, win.n_p, win.n_l))
-    return Chip(data=np.ascontiguousarray(arr.astype(np.complex64)),
-                line0=win.l0, pixel0=win.p0, date=entry.date, burst=burst)
+    dato = np.ascontiguousarray(arr.astype(np.complex64))
+
+    if calibra and entry.calibration:
+        cal = leggi_calibrazione(entry.calibration)
+        if cal is not None:
+            a = cal.valuta(win.l0, win.p0, win.n_l, win.n_p)
+            dato = (dato / np.maximum(a, 1e-9)).astype(np.complex64)
+
+    return Chip(data=dato, line0=win.l0, pixel0=win.p0,
+                date=entry.date, burst=burst)
+
+
+def mappa_rumore(entry: StackEntry, win: ChipWindow) -> Optional[np.ndarray]:
+    """Il pavimento di rumore sul ritaglio, nelle stesse unita' di sigma0.
+
+    Il noise-*.xml da' il rumore in DN^2; per confrontarlo con un'intensita'
+    calibrata va diviso per sigmaNought^2, gli stessi fattori usati da
+    read_window(calibra=True). Il risultato e' il NESZ pixel per pixel."""
+    if not entry.noise or not entry.calibration:
+        return None
+    noi = leggi_rumore(entry.noise)
+    cal = leggi_calibrazione(entry.calibration)
+    if noi is None or cal is None:
+        return None
+    n = noi.valuta(win.l0, win.p0, win.n_l, win.n_p)
+    a = cal.valuta(win.l0, win.p0, win.n_l, win.n_p)
+    return (n / np.maximum(a, 1e-9) ** 2).astype(np.float32)
 
 
 def apply_shift(img: np.ndarray, shift: complex) -> np.ndarray:
@@ -1268,6 +1401,11 @@ class InterfCube:
     master_date: str
     coreg: List[Dict[str, Any]] = field(default_factory=list)
     flat_mask: Optional[np.ndarray] = None
+    #: NESZ del master sul ritaglio, in unita' di sigma0 (None se il prodotto
+    #: non porta i .xml di calibrazione e rumore)
+    nesz: Optional[np.ndarray] = None
+    #: True se le ampiezze sono sigma0 calibrato e non conteggi DN
+    calibrato: bool = False
 
 
 def _pyramid_footprint_mask(geo: Geocoder, win: ChipWindow, scale: float = 1.0) -> np.ndarray:
@@ -1316,9 +1454,50 @@ def build_interf_cube(
     win, burst = target_window(ann_m, geo_m, cfg)
     n_l, n_p = win.n_l, win.n_p
 
-    chip_m = read_window(entries[mi], win, burst)
+    # Rete di sicurezza sulla baseline critica: oltre di essa lo spostamento
+    # spettrale in range supera l'intera banda del chirp e fra le due
+    # acquisizioni non resta nessuna frequenza in comune. La coerenza e' zero
+    # per costruzione, non per decorrelazione temporale.
+    r0 = 0.5 * C_LIGHT * ann_m.slant_range_time
+    th0 = math.radians(float(np.median(geo_m.incidence(
+        np.array([0.5 * (win.l0 + win.l1)]), np.array([0.5 * (win.p0 + win.p1)])))))
+    b_crit = (ann_m.range_bandwidth * r0 * math.tan(th0)
+              * ann_m.wavelength / C_LIGHT)
+    oltre = [b for b in baselines if abs(b.b_perp) > b_crit]
+    if oltre and verbose:
+        print(f"  ATTENZIONE: {len(oltre)} acquisizioni oltre la baseline "
+              f"critica ({b_crit / 1000.0:.1f} km): "
+              + ", ".join(f"{b.date} ({b.b_perp / 1000.0:+.0f} km)" for b in oltre)
+              + " -- non sono interferometriche.")
+
+    calibra = cfg.calibrazione and bool(entries[mi].calibration)
+    chip_m = read_window(entries[mi], win, burst, calibra=calibra)
     img_m = tops_deramp(chip_m, ann_m)
     amp_m = np.abs(img_m).astype(np.float32)
+
+    # --- calibrazione radiometrica e rumore termico (F40) -----------------
+    # In VH cross-pol sul deserto il segnale sta pochi dB sopra il NESZ: una
+    # parte dell'ampiezza della piana NON e' retrodiffusione ma rumore
+    # termico. Sottrarlo in INTENSITA' (non in ampiezza) e' l'unico modo
+    # corretto, perche' le potenze si sommano e le ampiezze no.
+    # Il rumore NON va sottratto qui: amp_m normalizza gli interferogrammi
+    # (yi /= amp_m) e azzerare le celle sotto il pavimento produrrebbe
+    # divisioni per zero che distruggono la stima di coerenza -- misurato:
+    # la coerenza mediana crollava da 0.281 a 0.083. La sottrazione si fa a
+    # valle del multilooking, dove l'intensita' media e' stabile.
+    nesz = mappa_rumore(entries[mi], win) if calibra else None
+    if nesz is not None:
+        if verbose:
+            def _db(x: float) -> float:
+                return 10.0 * math.log10(max(x, 1e-30))
+            n_med = float(np.median(nesz))
+            s_med = float(np.median(amp_m.astype(np.float64) ** 2))
+            print(f"      radiometria (F40): sigma0 calibrato dal "
+                  f"calibration-*.xml; NESZ mediano {_db(n_med):.1f} dB, "
+                  f"segnale {_db(s_med):.1f} dB, SNR {_db(s_med / max(n_med, 1e-30)):.1f} dB")
+            print(f"      celle entro 3 dB dal rumore: "
+                  f"{100.0 * float(np.mean(amp_m.astype(np.float64) ** 2 < 2.0 * nesz)):.1f} "
+                  f"% -- il pavimento viene sottratto dopo il multilooking")
 
     ll = np.arange(win.l0, win.l1 + 1, dtype=np.float64)
     pp = np.arange(win.p0, win.p1 + 1, dtype=np.float64)
@@ -1349,7 +1528,7 @@ def build_interf_cube(
             img = img_m
             shift, src, psr = 0j, "master", float("inf")
         else:
-            chip = read_window(entry, win, burst)
+            chip = read_window(entry, win, burst, calibra=calibra)
             img = tops_deramp(chip, ann)
 
             l_s, p_s = geo.latlon_to_line_pixel(PYRAMIDS[0].lat, PYRAMIDS[0].lon)
@@ -1390,7 +1569,7 @@ def build_interf_cube(
                   + ("" if math.isinf(psr) else f"  PSR={psr:5.1f}"))
 
     cube = InterfCube(
-        y=y, amp_master=amp_m, k_z=k_z,
+        y=y, amp_master=amp_m, k_z=k_z, nesz=nesz, calibrato=calibra,
         dates=[e.date for e in entries], baselines=baselines, win=win,
         incidence=inc, ann=ann_m, geo=geo_m, master_date=entries[mi].date,
         coreg=coreg, flat_mask=flat_mask,
@@ -2573,14 +2752,13 @@ def polarisation_contrast(cfg: Config, verbose: bool = True) -> Dict[str, Any]:
     nella zona di LAYOVER simulata, cioe' dove la piramide finisce davvero, non
     sull'impronta al suolo."""
     from scipy.ndimage import uniform_filter
-    import rasterio
-    from rasterio.windows import Window
 
     out: Dict[str, Any] = {}
     for pol in ("vh", "vv"):
         c = Config(**{**asdict(cfg), "polarisation": pol})
         try:
-            entries = discover_stack(c)
+            # verbose=False: l'avviso sulle tracce l'ha gia' dato run()
+            entries = discover_stack(c, verbose=False)
         except FileNotFoundError:
             continue
         e = entries[min(len(entries) // 2, len(entries) - 1)]
@@ -2592,9 +2770,17 @@ def polarisation_contrast(cfg: Config, verbose: bool = True) -> Dict[str, Any]:
         gl, gp = np.meshgrid(ll, pp, indexing="ij")
         sim = simulate_pyramids_radar(geo, ann, win, geo.incidence(gl, gp))
 
-        with rasterio.open(e.tiff) as ds:
-            arr = ds.read(1, window=Window(win.p0, win.l0, win.n_p, win.n_l))
-        pw = uniform_filter(np.abs(arr.astype(np.complex64)) ** 2, (3, 9))
+        # F40: qui si misurano dei dB, quindi conviene che siano dB di sigma0
+        # e non di conteggi DN. Con i .xml del prodotto il contrasto diventa
+        # una grandezza fisica confrontabile fra date, swath e polarizzazioni,
+        # e togliendo il NESZ non si sta piu' misurando anche il rumore -- che
+        # in VH sul deserto e' una frazione non trascurabile del fondo.
+        chip = read_window(e, win, 0, calibra=c.calibrazione and bool(e.calibration))
+        pw = uniform_filter(np.abs(chip.data) ** 2, (3, 9))
+        if c.calibrazione:
+            n_map = mappa_rumore(e, win)
+            if n_map is not None:
+                pw = np.maximum(pw - uniform_filter(n_map, (3, 9)), 0.0)
 
         m, sh = sim["sim_mask"], sim["sim_h"]
         bg = 10.0 * math.log10(float(pw[~m].mean()))
@@ -2634,19 +2820,104 @@ def polarisation_contrast(cfg: Config, verbose: bool = True) -> Dict[str, Any]:
     return out
 
 
-def discover_stack(cfg: Config) -> List[StackEntry]:
+def _data_da_nome(nome: str) -> str:
+    m = re.search(r"-(\d{8})t", os.path.basename(nome))
+    return m.group(1) if m else "?"
+
+
+def _stack_piatto(cfg: Config) -> List[StackEntry]:
+    """Layout storico: <platform>-<swath>-slc-<pol>-*.annotation.xml + .tiff."""
     pattern = os.path.join(
         cfg.stack_dir,
         f"{cfg.platform}-{cfg.swath}-slc-{cfg.polarisation}-*.annotation.xml",
     )
-    entries = []
+    out: List[StackEntry] = []
     for ann in sorted(glob.glob(pattern)):
         tif = ann.replace(".annotation.xml", ".tiff")
         if os.path.exists(tif):
-            m = re.search(r"-(\d{8})t", os.path.basename(ann))
-            entries.append(StackEntry(m.group(1) if m else "?", ann, tif))
+            out.append(StackEntry(_data_da_nome(ann), ann, tif))
+    return out
+
+
+def _stack_safe(cfg: Config) -> List[StackEntry]:
+    """Alberi .SAFE come li consegna CDSE, letti dove sono.
+
+    Evita di dover costruire una cartella-ponte con copie o hard link: il
+    prodotto Sentinel-1 ha gia' tutto al posto giusto, e da qui si raccolgono
+    anche i due .xml di calibrazione e rumore che il layout piatto non porta.
+    La piattaforma NON filtra: un S1A e un S1C sulla stessa orbita relativa
+    appartengono alla stessa pila multi-baseline, ed e' proprio la diversita'
+    di baseline che serve."""
+    marca = f"-{cfg.swath}-slc-{cfg.polarisation}-".lower()
+    out: List[StackEntry] = []
+    for safe in sorted(glob.glob(os.path.join(cfg.stack_dir, "*.SAFE"))):
+        ann = [a for a in glob.glob(os.path.join(safe, "annotation", "*.xml"))
+               if marca in os.path.basename(a).lower()]
+        if not ann:
+            continue
+        base = os.path.splitext(os.path.basename(ann[0]))[0]
+        tif = os.path.join(safe, "measurement", base + ".tiff")
+        if not os.path.exists(tif):
+            continue                      # .tiff assente o ancora .part
+        cal = os.path.join(safe, "annotation", "calibration",
+                           "calibration-" + base + ".xml")
+        noi = os.path.join(safe, "annotation", "calibration",
+                           "noise-" + base + ".xml")
+        out.append(StackEntry(
+            _data_da_nome(base), ann[0], tif,
+            calibration=cal if os.path.exists(cal) else None,
+            noise=noi if os.path.exists(noi) else None))
+    return out
+
+
+def _passo_orbitale(annotation: str) -> str:
+    """Ascending / Descending letto dall'annotation, senza parsarlo tutto."""
+    try:
+        root = ET.parse(annotation).getroot()
+    except Exception:                                   # pragma: no cover
+        return "?"
+    t = root.findtext(".//generalAnnotation/productInformation/pass")
+    return (t or "?").strip()
+
+
+def _omogenea(entries: List[StackEntry], verbose: bool = True) -> List[StackEntry]:
+    """Tiene solo le acquisizioni geometricamente compatibili fra loro.
+
+    Una pila interferometrica deve stare su UNA sola traccia: ascendente e
+    discendente guardano lo stesso punto da lati opposti dell'orbita, e la
+    loro baseline ortogonale vale centinaia di chilometri -- cinque ordini di
+    grandezza oltre la baseline critica, quindi coerenza esattamente zero.
+    Mescolarle non degrada il risultato, lo distrugge. Si tiene il gruppo piu'
+    numeroso e si dice a voce alta cosa e' stato scartato."""
+    if len(entries) < 2:
+        return entries
+    gruppi: Dict[str, List[StackEntry]] = {}
+    for e in entries:
+        gruppi.setdefault(_passo_orbitale(e.annotation), []).append(e)
+    if len(gruppi) == 1:
+        return entries
+    tenuto = max(gruppi, key=lambda k: len(gruppi[k]))
+    if verbose:
+        scartati = {k: len(v) for k, v in gruppi.items() if k != tenuto}
+        print(f"  ATTENZIONE: la cartella contiene passaggi di tracce diverse. "
+              f"Tengo {len(gruppi[tenuto])} acquisizioni {tenuto}, scarto "
+              + ", ".join(f"{n} {k}" for k, n in scartati.items())
+              + " (baseline oltre la critica: coerenza nulla).")
+    return gruppi[tenuto]
+
+
+def discover_stack(cfg: Config, verbose: bool = True) -> List[StackEntry]:
+    """Trova le acquisizioni, in uno qualsiasi dei due layout supportati."""
+    entries = _stack_piatto(cfg) or _omogenea(_stack_safe(cfg), verbose)
     if not entries:
-        raise FileNotFoundError(f"nessun file trovato: {pattern}")
+        raise FileNotFoundError(
+            f"nessuna acquisizione {cfg.swath}/{cfg.polarisation} in "
+            f"{cfg.stack_dir}\n"
+            f"  layout piatto cercato: {cfg.platform}-{cfg.swath}-slc-"
+            f"{cfg.polarisation}-*.annotation.xml\n"
+            f"  alberi cercati:        *.SAFE/annotation/*-{cfg.swath}-slc-"
+            f"{cfg.polarisation}-*.xml")
+    entries.sort(key=lambda e: e.date)
     return entries
 
 
@@ -2689,6 +2960,16 @@ def run(cfg: Config, verbose: bool = True) -> Dict[str, Any]:
     y_ml = multilook(cube.y, sl, sp).astype(np.complex64)
     k_ml = multilook(cube.k_z, sl, sp).astype(np.float32)
     amp_ml = multilook(cube.amp_master.astype(np.float32), sl, sp)
+    # F40: il pavimento di rumore si toglie QUI, in intensita' e sul reticolo
+    # multilooked. Il multilooking media sl*sp celle: riduce la varianza del
+    # rumore ma non la sua MEDIA, che resta il NESZ e va sottratta. Farlo su
+    # una media di 4 celle invece che pixel per pixel evita gli zeri che
+    # rovinerebbero i prodotti a valle.
+    nesz_ml = None
+    if cube.nesz is not None:
+        nesz_ml = multilook(cube.nesz.astype(np.float32), sl, sp)
+        i_pulita = np.maximum(amp_ml.astype(np.float64) ** 2 - nesz_ml, 0.0)
+        amp_ml = np.sqrt(i_pulita).astype(np.float32)
     inc_ml = multilook(cube.incidence, sl, sp)
     shape: Tuple[int, int] = (y_ml.shape[1], y_ml.shape[2])
     print(f"\n  [2] multilooking {sl}x{sp} -> reticolo {shape} "
@@ -4857,6 +5138,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("--html", dest="html_name", default="tomografia_piramidi_3d.html")
     ap.add_argument("--report-only", action="store_true",
                     help="solo baseline e budget, senza leggere i .tiff")
+    ap.add_argument("--no-calibrazione", dest="calibrazione",
+                    action="store_false",
+                    help="F40: non applicare calibration-*.xml e noise-*.xml "
+                         "(ampiezze in conteggi DN grezzi)")
     ap.add_argument("--no-suolo", dest="suolo_dem", action="store_false",
                     help="F39: non produrre il layer 'suolo (DEM)'")
     ap.add_argument("--no-dem-esterno", dest="fetch_dem", action="store_false",
@@ -4890,6 +5175,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     cfg = Config(
         stack_dir=args.stack_dir, swath=args.swath, platform=args.platform,
         polarisation=args.polarisation,
+        calibrazione=args.calibrazione,
         n_dates=args.n_dates, n_elev=args.n_elev, elev_max_m=args.elev_max_m,
         n_d=args.n_d, b_shift_fraction=args.b_shift_fraction,
         mm_lines=args.mm_lines, look_range=args.look_range,
@@ -4931,8 +5217,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                   f"  (compressione {r['compressione']}x)")
         return 0
 
-    res = run(cfg, verbose=not args.quiet)
+    # la cartella di uscita deve esistere PRIMA di run(): ground_dem_suolo()
+    # ci scrive dentro la cache del DEM mentre run() e' ancora in corso
     os.makedirs(cfg.out_dir, exist_ok=True)
+    res = run(cfg, verbose=not args.quiet)
 
     print("\n  [10] validazione a tre livelli")
     valid = validate(res, cfg)

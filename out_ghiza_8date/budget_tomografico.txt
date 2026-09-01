@@ -1,0 +1,67 @@
+----------------------------------------------------------------------------
+BUDGET TOMOGRAFICO MULTI-BASELINE
+----------------------------------------------------------------------------
+  lunghezza d'onda radar                =       5.55 cm
+  slant range                      R    =     850.86 km
+  angolo di incidenza              th   =      36.84 gradi
+  baseline impilate                     =          8
+  escursione baseline ortogonali        =      138.8 m
+  deviazione standard delle baseline    =       46.6 m
+
+  RISOLUZIONE  (separazione di Rayleigh fra due diffusori)
+    delta_z = lambda*R/(2*B)  in slant  =      170.0 m
+    proiettata in verticale             =      283.5 m
+    altezza di ambiguita'               =     2356.6 m
+    celle sull'altezza del target       =       0.49
+    >> struttura interna separabile?              NO
+
+  PRECISIONE  (quota di UN diffusore dominante)  -- F15
+    coerenza tipica assunta       gamma =       0.32
+    sigma_h = lambda*R*sin(th)*sigma_phi/(4*pi*sigma_B)
+                                        =       35.4 m
+    altezza del target                  =      138.5 m
+    >> superficie reale misurabile?               NO
+
+  Le due righe non si contraddicono: separare due diffusori dentro la
+  stessa cella e stimare la quota di quello dominante sono problemi
+  diversi. Confonderli e' l'errore concettuale corretto in F15.
+----------------------------------------------------------------------------
+
+----------------------------------------------------------------------------
+BANCO DI SUB-APERTURE DOPPLER  (micro-moto)
+----------------------------------------------------------------------------
+  banda Doppler totale        B_cD    =    313.00 Hz
+  banda di guardia            B_DL    =    156.50 Hz
+  larghezza sub-banda         B_sub   =    156.50 Hz
+  separazione master/slave    B_shift =     28.17 Hz
+  passo di marcia                     =     11.67 Hz
+  sub-aperture                N_D     =        12
+  risoluzione griglia Doppler         =     2.183 Hz/bin
+  bin per sub-banda                   =      71.7
+
+  MAPPATURA FREQUENZA -> TEMPO (dal Doppler rate dell'annotation)
+  azimuth FM rate             k_a     =   -2187.9 Hz/s
+  rate TOPS combinata         k_t     =    1491.4 Hz/s
+  tempo di illuminazione del target   =     143.1 ms
+  passo temporale fra sub-aperture    =      5.33 ms
+  ritardo master-slave                =     12.88 ms
+  finestra osservata (marcia completa)=     58.65 ms
+
+  campionamento meccanico     f_s     =    187.54 Hz
+  frequenza osservabile max (Nyquist) =     38.83 Hz
+  frequenza osservabile min (finestra)=     17.05 Hz
+  >> il banco risolve una banda di frequenze meccaniche
+
+  PERCHE' LA TOMOGRAFIA ACUSTICA DELLE FONTI QUI NON E' APPLICABILE
+  apertura sintetica          L_sa    =       959 m
+  lambda acustica a  38.8 Hz (v=6000 m/s) =       155 m
+  delta_z acustica = lambda*R/(2*L_sa) =     68.5 km
+
+  Limite dei dati: il TOPS di Sentinel-1 illumina un bersaglio per
+  143 ms soltanto, quindi la traccia di vibrazione dura 59 ms
+  e la frequenza meccanica accessibile e' di decine di Hz. Le fonti
+  lavorano su spotlight con B_cD ~ 22 kHz e indagano a 12.5 kHz: due
+  ordini di grandezza in piu'. E' questa la ragione per cui qui la
+  profondita' viene dalle baseline orbitali e non dal micro-moto, che
+  resta un attributo di superficie e nulla di piu'.
+----------------------------------------------------------------------------

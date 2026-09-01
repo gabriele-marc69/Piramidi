@@ -79,6 +79,13 @@ CHUNK = 1 << 20                       # 1 MiB
 #: file di log lascerebbero una riga sola, illeggibile
 TTY = sys.stdout.isatty()
 
+#: attesa iniziale fra due tentativi, poi raddoppia fino a 120 s
+ATTESA_MINIMA = 5.0
+
+#: byte oltre i quali un tentativo interrotto conta come "ha fatto strada" e
+#: azzera il backoff (misurato: la meta' delle cadute avviene entro 27 MB)
+PROGRESSO_UTILE = 64 << 20            # 64 MiB
+
 #: un prodotto IW SLC contiene 3 swath x 2 polarizzazioni; scaricandone uno
 #: solo si prende circa questa frazione del totale (misurata: 1.47 / 8.32 GB)
 FRAZIONE_SWATH = 5.6
@@ -397,7 +404,7 @@ def scarica_flusso(url: str, destinazione: str, atteso: int, cfg: Config,
     concessa e si ricomincia da zero -- meglio ritrasferire che incollare due
     tronconi disallineati."""
     parziale = destinazione + ".part"
-    attesa = 5.0
+    attesa = ATTESA_MINIMA
     ultimo = ""
 
     for tentativo in range(1, cfg.retries + 1):
@@ -454,6 +461,13 @@ def scarica_flusso(url: str, destinazione: str, atteso: int, cfg: Config,
                 _fine_avanzamento()
                 ultimo = f"{type(ex).__name__}: {ex}"
                 if tentativo < cfg.retries:
+                    # le cadute si presentano a grappoli: quasi tutte entro i
+                    # primi MB, poi ogni tanto una connessione buona regge per
+                    # GB. Un tentativo che ha fatto strada dice che la rete e'
+                    # tornata utilizzabile, quindi il backoff riparte da capo
+                    # invece di continuare a crescere fino a due minuti.
+                    if scritti - gia >= PROGRESSO_UTILE:
+                        attesa = ATTESA_MINIMA
                     print(f"      interrotto a {_fmt(scritti)} / {_fmt(totale)}"
                           f"; ritento fra {attesa:.0f} s ({ultimo})")
                     time.sleep(attesa)

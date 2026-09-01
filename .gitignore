@@ -85,3 +85,6 @@ manifest_scarico.json
 # zero, quindi vanno versionati (21 MB in tutto).
 !out_piramidi_v02/
 !out_piramidi_v02/**
+# corsa sui dati 2026 scaricati da CDSE (8 date ascendenti, orbita 58)
+!out_ghiza_8date/
+!out_ghiza_8date/**

@@ -308,6 +308,11 @@ class StackEntry:
     date: str
     annotation: str
     tiff: str
+    #: .xml di calibrazione radiometrica e di rumore termico, quando il
+    #: prodotto li porta con se' (alberi .SAFE). Restano opzionali: uno stack
+    #: piatto costruito a mano puo' non averli.
+    calibration: Optional[str] = None
+    noise: Optional[str] = None
 
 
 def discover_stack(cfg: Config) -> List[StackEntry]:
