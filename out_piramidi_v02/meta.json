@@ -1,0 +1,701 @@
+{
+  "generato": "2026-08-31 16:13:44",
+  "programma": "piramidi_v02.py (revisione 2026-08-28)",
+  "metodo": "stack interferometrico multi-baseline VH + periodogramma in quota + attributi di micro-moto Doppler",
+  "polarizzazione": "VH (cross-pol, scattering di volume)",
+  "sorgente_geometria": "annotation.xml (orbite, geolocation grid, quota di riferimento)",
+  "sorgente_misura": "tiff VH, pixel per pixel",
+  "date": [
+    "20260109",
+    "20260121",
+    "20260202",
+    "20260214",
+    "20260226",
+    "20260310",
+    "20260322",
+    "20260403",
+    "20260415",
+    "20260427",
+    "20260509"
+  ],
+  "master": "20260310",
+  "coregistrazione": [
+    {
+      "data": "20260109",
+      "b_perp_m": 61.51,
+      "b_temp_giorni": -60.0,
+      "shift_px": [
+        -0.1,
+        1.15
+      ],
+      "sorgente_shift": "corr",
+      "psr": 20.18
+    },
+    {
+      "data": "20260121",
+      "b_perp_m": 138.55,
+      "b_temp_giorni": -48.0,
+      "shift_px": [
+        0.537,
+        -27.983
+      ],
+      "sorgente_shift": "geo",
+      "psr": 10.3
+    },
+    {
+      "data": "20260202",
+      "b_perp_m": 162.52,
+      "b_temp_giorni": -36.0,
+      "shift_px": [
+        0.789,
+        -46.616
+      ],
+      "sorgente_shift": "geo",
+      "psr": 15.71
+    },
+    {
+      "data": "20260214",
+      "b_perp_m": 102.04,
+      "b_temp_giorni": -24.0,
+      "shift_px": [
+        0.1,
+        -21.05
+      ],
+      "sorgente_shift": "corr",
+      "psr": 10.19
+    },
+    {
+      "data": "20260226",
+      "b_perp_m": 47.46,
+      "b_temp_giorni": -12.0,
+      "shift_px": [
+        0.459,
+        -11.649
+      ],
+      "sorgente_shift": "geo",
+      "psr": 12.61
+    },
+    {
+      "data": "20260310",
+      "b_perp_m": 0.0,
+      "b_temp_giorni": 0.0,
+      "shift_px": [
+        0.0,
+        0.0
+      ],
+      "sorgente_shift": "master",
+      "psr": null
+    },
+    {
+      "data": "20260322",
+      "b_perp_m": 39.77,
+      "b_temp_giorni": 12.0,
+      "shift_px": [
+        2.269,
+        -8.279
+      ],
+      "sorgente_shift": "geo",
+      "psr": 11.75
+    },
+    {
+      "data": "20260403",
+      "b_perp_m": 102.7,
+      "b_temp_giorni": 24.0,
+      "shift_px": [
+        2.173,
+        -27.421
+      ],
+      "sorgente_shift": "geo",
+      "psr": 9.13
+    },
+    {
+      "data": "20260415",
+      "b_perp_m": 22.3,
+      "b_temp_giorni": 36.0,
+      "shift_px": [
+        2.128,
+        -4.42
+      ],
+      "sorgente_shift": "geo",
+      "psr": 11.49
+    },
+    {
+      "data": "20260427",
+      "b_perp_m": 72.92,
+      "b_temp_giorni": 48.0,
+      "shift_px": [
+        3.646,
+        -37.608
+      ],
+      "sorgente_shift": "geo",
+      "psr": 10.66
+    },
+    {
+      "data": "20260509",
+      "b_perp_m": 9.55,
+      "b_temp_giorni": 60.0,
+      "shift_px": [
+        3.738,
+        -17.665
+      ],
+      "sorgente_shift": "geo",
+      "psr": 10.24
+    }
+  ],
+  "budget": {
+    "wavelength": 0.05546576,
+    "slant_range": 850862.9338708892,
+    "incidence_deg": 36.847537994384766,
+    "b_spread": 162.51519287256315,
+    "b_std": 52.60733852631091,
+    "n_baselines": 11,
+    "delta_z_slant": 145.19799179632935,
+    "delta_z_vertical": 242.12265576694494,
+    "ambiguity_height": 2936.878868382648,
+    "target_height": 138.5,
+    "gamma_typ": 0.4971877634525299,
+    "sigma_h": 15.928058452052225
+  },
+  "budget_a_priori": {
+    "wavelength": 0.05546576,
+    "slant_range": 850862.9338708892,
+    "incidence_deg": 36.847537994384766,
+    "b_spread": 162.51519287256315,
+    "b_std": 52.60733852631091,
+    "n_baselines": 11,
+    "delta_z_slant": 145.19799179632935,
+    "delta_z_vertical": 242.12265576694494,
+    "ambiguity_height": 2936.878868382648,
+    "target_height": 138.5,
+    "gamma_typ": 0.6,
+    "sigma_h": 12.169730343252535
+  },
+  "coerenza_mediana_misurata": 0.4972,
+  "soglia_qualita_gamma": 0.7908,
+  "distribuzione_nulla_periodogramma": {
+    "mediana_nulla": 0.561,
+    "p90_nulla": 0.6838,
+    "p99_nulla": 0.7908,
+    "p99_9_nulla": 0.8704,
+    "soglia_usata": 0.7908,
+    "percentile_usato": 99.0,
+    "prove": 20000
+  },
+  "nodi_despicati": 156,
+  "contrasto_per_polarizzazione": {
+    "vh": {
+      "data": "20260310",
+      "fondo_dB": 35.91,
+      "contrasto_per_fascia_dB": {
+        "layover_alto_gt80m": 1.61,
+        "medio_40_80m": 2.38,
+        "basso_lt40m": -0.68
+      },
+      "picco_dB": {
+        "Cheope (Khufu)": 11.44,
+        "Chefren (Khafre)": 6.9
+      }
+    },
+    "vv": {
+      "data": "20260310",
+      "fondo_dB": 42.23,
+      "contrasto_per_fascia_dB": {
+        "layover_alto_gt80m": 0.72,
+        "medio_40_80m": 8.05,
+        "basso_lt40m": -0.65
+      },
+      "picco_dB": {
+        "Cheope (Khufu)": 22.63,
+        "Chefren (Khafre)": 9.09
+      }
+    },
+    "conclusione": "Il ritorno delle piramidi e' co-polarizzato: picco su Cheope +22.6 dB in VV contro +11.4 dB in VH. Usare VH costa 11.2 dB proprio sui bersagli da misurare. La scelta del canale e' rispettata come richiesta, ma il costo e' misurato e dichiarato, non giustificato a parole."
+  },
+  "piano_sub_aperture": {
+    "b_cd": 313.0,
+    "b_dl": 156.5,
+    "b_sub": 156.5,
+    "b_shift": 28.169999999999998,
+    "step": 11.666363636363638,
+    "n_d": 12,
+    "df_bin": 2.182897913073669,
+    "bins_per_sub": 71.69368712238006,
+    "k_a": -2187.7622984719087,
+    "k_t": 1491.3157613151864,
+    "t_illum": 0.14306855923910097,
+    "dt_step": 0.0053325553898210375,
+    "dt_shift": 0.012876170331519088,
+    "t_window": 0.05865810928803141,
+    "f_sample": 187.52735356651596,
+    "f_max_obs": 38.83142169811695,
+    "f_min_obs": 17.047941233319634,
+    "aperture_m": 958.5593469019765,
+    "lambda_sound_m": 154.51404397822904,
+    "delta_z_acoustic": 68507.46268656716
+  },
+  "segno_k_z": 1.0,
+  "layover": {
+    "angolo_di_incidenza_deg": 36.85,
+    "angolo_di_vista_off_nadir_deg": 32.74,
+    "soglia_layover_deg": 36.85,
+    "soglia_ombra_deg": 53.15,
+    "piramidi": [
+      {
+        "piramide": "Cheope (Khufu)",
+        "pendenza_faccia_deg": 51.84,
+        "incidenza_locale_faccia_vicina_deg": -14.99,
+        "incidenza_locale_faccia_lontana_deg": 88.69,
+        "faccia_vicina": "layover",
+        "faccia_lontana": "illuminata",
+        "estensione_slant_faccia_vicina_m": 41.8,
+        "compressione": 2.8
+      },
+      {
+        "piramide": "Chefren (Khafre)",
+        "pendenza_faccia_deg": 53.13,
+        "incidenza_locale_faccia_vicina_deg": -16.28,
+        "incidenza_locale_faccia_lontana_deg": 89.98,
+        "faccia_vicina": "layover",
+        "faccia_lontana": "illuminata",
+        "estensione_slant_faccia_vicina_m": 44.6,
+        "compressione": 2.4
+      },
+      {
+        "piramide": "Micerino (Menkaure)",
+        "pendenza_faccia_deg": 51.34,
+        "incidenza_locale_faccia_vicina_deg": -14.49,
+        "incidenza_locale_faccia_lontana_deg": 88.19,
+        "faccia_vicina": "layover",
+        "faccia_lontana": "illuminata",
+        "estensione_slant_faccia_vicina_m": 18.2,
+        "compressione": 2.8
+      }
+    ],
+    "nota": "Tutte e tre le facce rivolte al sensore superano l'angolo di incidenza: sono in layover pieno, e le facce opposte sono in ombra. E' geometria, non un artefatto del processing. Le fonti raccomandano di preferire il lato in layover: comprime piu' diffusori nella stessa cella di range ma li separa lungo l'asse di elevazione, che e' esattamente l'asse ricostruito qui."
+  },
+  "validazione": {
+    "livello_1_geometria": {
+      "regressione_misurato_vs_simulato": {
+        "pixel": 168,
+        "pendenza": -0.064,
+        "pendenza_theil_sen": -0.009,
+        "ic95": [
+          -0.058,
+          0.039
+        ],
+        "mediane_per_fascia": [
+          {
+            "simulato_m": [
+              5,
+              30
+            ],
+            "celle": 54,
+            "misurato_mediano_m": 0.4
+          },
+          {
+            "simulato_m": [
+              30,
+              60
+            ],
+            "celle": 55,
+            "misurato_mediano_m": -2.5
+          },
+          {
+            "simulato_m": [
+              60,
+              90
+            ],
+            "celle": 34,
+            "misurato_mediano_m": -2.5
+          },
+          {
+            "simulato_m": [
+              90,
+              null
+            ],
+            "celle": 25,
+            "misurato_mediano_m": -5.0
+          }
+        ],
+        "pendenza_attesa": 1.0,
+        "errore_standard_pendenza": 0.181,
+        "t_pendenza": -0.4,
+        "intercetta_m": 6.3,
+        "correlazione_r": -0.028,
+        "rmse_m": 75.0,
+        "esito": "nessuna dipendenza significativa dalla quota simulata"
+      },
+      "Cheope (Khufu)": {
+        "celle_simulate": 347,
+        "celle_di_qualita": 57,
+        "celle_di_sommita": 9,
+        "rilievo_misurato_m": 5.4,
+        "rilievo_simulato_m": 113.7,
+        "errore_m": -108.3,
+        "entro_2_sigma_h": false,
+        "rilievo_misurato_alla_base_m": 2.5
+      },
+      "Chefren (Khafre)": {
+        "celle_simulate": 310,
+        "celle_di_qualita": 114,
+        "celle_di_sommita": 8,
+        "rilievo_misurato_m": -5.8,
+        "rilievo_simulato_m": 114.0,
+        "errore_m": -119.9,
+        "entro_2_sigma_h": false,
+        "rilievo_misurato_alla_base_m": -6.6
+      },
+      "Micerino (Menkaure)": {
+        "celle_simulate": 76,
+        "celle_di_qualita": 13,
+        "celle_di_sommita": 4
+      },
+      "_quota_mediana_piana_m": 63.5,
+      "_sigma_h_attesa_m": 15.9,
+      "_soglia_qualita_gamma": 0.791,
+      "_distribuzione_nulla": {
+        "mediana_nulla": 0.561,
+        "p90_nulla": 0.6838,
+        "p99_nulla": 0.7908,
+        "p99_9_nulla": 0.8704,
+        "soglia_usata": 0.7908,
+        "percentile_usato": 99.0,
+        "prove": 20000
+      },
+      "_riferimento": "le quote note da letteratura archeologica entrano SOLO nella simulazione di confronto, mai nella catena che produce la superficie misurata"
+    },
+    "livello_2_misura": {
+      "pixel_buoni_frazione": 0.2171,
+      "gamma_mediana": 0.6781,
+      "gamma_p90": 0.873,
+      "dispersione_quota_sulla_piana_m": 84.7,
+      "sigma_h_teorica_m": 15.9,
+      "nota": "la dispersione misurata sulla piana e' il controllo empirico della sigma_h teorica: se le due sono dello stesso ordine il budget di precisione e' onesto"
+    },
+    "livello_3_struttura": {
+      "layover": {
+        "angolo_di_incidenza_deg": 36.85,
+        "angolo_di_vista_off_nadir_deg": 32.74,
+        "soglia_layover_deg": 36.85,
+        "soglia_ombra_deg": 53.15,
+        "piramidi": [
+          {
+            "piramide": "Cheope (Khufu)",
+            "pendenza_faccia_deg": 51.84,
+            "incidenza_locale_faccia_vicina_deg": -14.99,
+            "incidenza_locale_faccia_lontana_deg": 88.69,
+            "faccia_vicina": "layover",
+            "faccia_lontana": "illuminata",
+            "estensione_slant_faccia_vicina_m": 41.8,
+            "compressione": 2.8
+          },
+          {
+            "piramide": "Chefren (Khafre)",
+            "pendenza_faccia_deg": 53.13,
+            "incidenza_locale_faccia_vicina_deg": -16.28,
+            "incidenza_locale_faccia_lontana_deg": 89.98,
+            "faccia_vicina": "layover",
+            "faccia_lontana": "illuminata",
+            "estensione_slant_faccia_vicina_m": 44.6,
+            "compressione": 2.4
+          },
+          {
+            "piramide": "Micerino (Menkaure)",
+            "pendenza_faccia_deg": 51.34,
+            "incidenza_locale_faccia_vicina_deg": -14.49,
+            "incidenza_locale_faccia_lontana_deg": 88.19,
+            "faccia_vicina": "layover",
+            "faccia_lontana": "illuminata",
+            "estensione_slant_faccia_vicina_m": 18.2,
+            "compressione": 2.8
+          }
+        ],
+        "nota": "Tutte e tre le facce rivolte al sensore superano l'angolo di incidenza: sono in layover pieno, e le facce opposte sono in ombra. E' geometria, non un artefatto del processing. Le fonti raccomandano di preferire il lato in layover: comprime piu' diffusori nella stessa cella di range ma li separa lungo l'asse di elevazione, che e' esattamente l'asse ricostruito qui."
+      },
+      "separabilita_piramide_vs_piana": {
+        "delta_quota_mediana_m": -1.7,
+        "errore_standard_m": 5.94,
+        "z_score": -0.3,
+        "pixel_su_piramide": 175,
+        "pixel_su_piana": 1622
+      },
+      "avvertenza_interna": "delta_z verticale 242 m contro 138 m di altezza: la piramide occupa 0.57 celle di RISOLUZIONE. Nessuna struttura interna e' separabile con questi dati. Le camere note (Grande Galleria, camera del Re, camera della Regina) hanno dimensioni di alcuni metri, due ordini di grandezza sotto."
+    },
+    "calibrazione_segno_k_z": {
+      "segno_+1": {
+        "quota_mediana_piramidi_m": 0.13,
+        "quota_mediana_piana_m": -0.29,
+        "margine_m": 0.42,
+        "pixel_su_piramide": 83,
+        "pixel_su_piana": 3228
+      },
+      "segno_-1": {
+        "quota_mediana_piramidi_m": -0.13,
+        "quota_mediana_piana_m": 0.29,
+        "margine_m": -0.42,
+        "pixel_su_piramide": 83,
+        "pixel_su_piana": 3228
+      },
+      "segno_scelto": 1,
+      "criterio": "le piramidi devono risultare sopra la piana; si sceglie il segno che massimizza la mediana(quota sulle impronte) - mediana(quota sulla piana)",
+      "margine_scelto_m": 0.42
+    }
+  },
+  "analisi_colonne": {
+    "Cheope (Khufu)": {
+      "pixel_nella_colonna": 274,
+      "intensita_media_dB": -6.94,
+      "solidita_media": 0.1132,
+      "solidita_max": 0.1913,
+      "quota_del_massimo_m": 3.1
+    },
+    "Chefren (Khafre)": {
+      "pixel_nella_colonna": 239,
+      "intensita_media_dB": -7.49,
+      "solidita_media": 0.15,
+      "solidita_max": 0.3145,
+      "quota_del_massimo_m": -3.1
+    },
+    "Micerino (Menkaure)": {
+      "pixel_nella_colonna": 55,
+      "intensita_media_dB": -14.16,
+      "solidita_media": 0.0266,
+      "solidita_max": 0.0452,
+      "quota_del_massimo_m": 0.0
+    },
+    "deserto_controllo": {
+      "pixel_nella_colonna": 96,
+      "posizione_enu_m": [
+        394.5,
+        -811.7
+      ],
+      "intensita_media_dB": -6.13,
+      "solidita_media": 0.1697
+    },
+    "separabilita_vs_deserto": {
+      "Cheope (Khufu)": {
+        "delta_intensita_dB": -0.81,
+        "delta_solidita": -0.0565
+      },
+      "Chefren (Khafre)": {
+        "delta_intensita_dB": -1.36,
+        "delta_solidita": -0.0197
+      },
+      "Micerino (Menkaure)": {
+        "delta_intensita_dB": -8.03,
+        "delta_solidita": -0.1431
+      }
+    }
+  },
+  "geolocation_grid_xml": {
+    "descrizione": "F35/F36: i nodi VERI (non interpolati) della geolocation grid dello .xml. Non sono un piano: coprono tutta la scena con un rilievo reale fino a centinaia di metri. height_ref/xml_ref sono ora la bilineare LOCALE (F36) fra i quattro nodi reali della cella che contiene il ritaglio -- non una spline globale sui 231 nodi -- ma la spaziatura del reticolo e' enormemente piu' larga del ritaglio delle piramidi, quindi quella cella non ha rilievo locale da mostrare, e il risultato e' correttamente quasi piatto: e' un limite di risoluzione del riferimento, non un errore di calcolo.",
+    "spaziatura_reticolo_px": [
+      1507,
+      1299
+    ],
+    "nodo_piu_vicino_al_ritaglio_km": 2.61,
+    "nodo_piu_vicino_al_ritaglio_quota_m": 64.0,
+    "rilievo_vero_su_tutta_la_scena_m": [
+      6.0,
+      715.0
+    ]
+  },
+  "correzioni_applicate": [
+    {
+      "id": "F01",
+      "gravita": "critico",
+      "descrizione": "Il cubo tomografico ora contiene l'interferogramma y_i = s_i * conj(s_m) normalizzato, non le SLC grezze. Con le SLC grezze la fase di ogni data e' dominata dal termine di propagazione exp(-j4piR_i/lambda), che varia di migliaia di cicli fra date e sommerge completamente il termine k_z*z su cui si regge l'inversione."
+    },
+    {
+      "id": "F02",
+      "gravita": "critico",
+      "descrizione": "La fase di terra piatta e di topografia di riferimento e' rimossa analiticamente da orbita + geolocation grid (delta_R geometrico), non con una regressione su np.unwrap di uno scatter mascherato e appiattito, che su dati decorrelati e' un random walk e iniettava uno schermo di fase casuale."
+    },
+    {
+      "id": "F03",
+      "gravita": "alto",
+      "descrizione": "Interpolazione orbitale di Lagrange all'ordine 8 al posto di np.interp lineare. I vettori di stato distano 10 s: l'interpolazione lineare sbaglia di metri, e l'escursione di baseline utile e' di appena ~163 m."
+    },
+    {
+      "id": "F04",
+      "gravita": "alto",
+      "descrizione": "k_z calcolato con lo slant range e l'angolo di incidenza PROPRI di ciascuna acquisizione e di ciascun pixel (K_z = 4*pi*B_perp/(lambda*r_i*sin(theta))), non con un R medio scalare."
+    },
+    {
+      "id": "F05",
+      "gravita": "alto",
+      "descrizione": "Il segno di k_z non e' piu' assunto: viene calibrato sui dati verificando che le piramidi risultino SOPRA la piana e non sotto, e il margine della decisione viene riportato (validazione di livello 1, ch15)."
+    },
+    {
+      "id": "F06",
+      "gravita": "alto",
+      "descrizione": "Le sub-bande Doppler master/slave restano dentro lo spettro. Prima l'ultima sub-apertura slave sconfinava a 0.583*B_cD contro un limite di 0.5*B_cD, quindi le ultime marce del banco leggevano spettro vuoto."
+    },
+    {
+      "id": "F07",
+      "gravita": "alto",
+      "descrizione": "Il micro-moto si calcola su un chip esteso in azimuth (1024 linee dentro il burst) invece che sulle ~185 linee del chip tomografico. Con 185 linee la griglia Doppler ha 7.8 Hz per bin su 313 Hz totali: le 12 sub-aperture distavano meno di due bin l'una dall'altra e la decomposizione era priva di significato."
+    },
+    {
+      "id": "F08",
+      "gravita": "medio",
+      "descrizione": "Finestratura di Hann sulle sub-bande al posto del rect, che generava lobi laterali sinc in azimuth e sporcava il pixel tracking."
+    },
+    {
+      "id": "F09",
+      "gravita": "alto",
+      "descrizione": "L'energia di micro-moto e' la deviazione standard del vettore di shift COMPLESSO demediato, non std(|shift|). Con std(|shift|) una vibrazione a modulo costante -- il caso dell'oscillatore a 2 gradi di liberta' delle fonti, eq. (20) -- restituiva energia nulla."
+    },
+    {
+      "id": "F10",
+      "gravita": "medio",
+      "descrizione": "La griglia del micro-moto e' riportata al reticolo pieno con map_coordinates sulle coordinate reali dei nodi, non con zoom: zoom introduceva un offset di mezza finestra (~8 px) e poteva restituire una forma diversa da quella del cubo, rompendo il broadcast."
+    },
+    {
+      "id": "F11",
+      "gravita": "medio",
+      "descrizione": "I profili verticali mediano in POTENZA e convertono in dB alla fine. Mediare direttamente i dB introduce un bias sistematico."
+    },
+    {
+      "id": "F12",
+      "gravita": "medio",
+      "descrizione": "La colonna di deserto di controllo e' scelta dentro la copertura effettiva e verificata non vuota. Prima poteva cadere fuori dal chip, restituire zeri e produrre una separabilita' falsa."
+    },
+    {
+      "id": "F13",
+      "gravita": "medio",
+      "descrizione": "Il master e' il 'supermaster' che minimizza il costo di decorrelazione combinato (baseline + temporale), non semplicemente la prima data."
+    },
+    {
+      "id": "F14",
+      "gravita": "alto",
+      "descrizione": "Geocodifica per interpolazione bilineare LOCALE (F36) sulla geolocation grid, che e' un reticolo regolare 11x21. Prima si usava griddata + nan_to_num(media): i punti fuori dall'inviluppo venivano riempiti con la media, deformando la geometria."
+    },
+    {
+      "id": "F15",
+      "gravita": "concettuale",
+      "descrizione": "Separazione fra RISOLUZIONE e PRECISIONE. delta_z ~ 227 m e' la separazione di Rayleigh fra due diffusori nella stessa cella; la precisione sulla quota di un diffusore dominante e' sigma_h = lambda*R*sin(theta)*sigma_phi / (4*pi*sigma_Bperp) e con 11 baseline vale alcune decine di metri. La versione precedente concludeva 'non risolvibile' confondendo le due cose, e per questo non disegnava alcuna superficie."
+    },
+    {
+      "id": "F16",
+      "gravita": "concettuale",
+      "descrizione": "Layover e foreshortening sono calcolati e riportati. Con incidenza 39.4 gradi (angolo di vista ~34.8) e facce a 52 gradi la faccia rivolta al sensore e' in layover pieno: e' una proprieta' della geometria, non un artefatto, e va dichiarata prima di interpretare (ch14)."
+    },
+    {
+      "id": "F17",
+      "gravita": "nuovo",
+      "descrizione": "Superficie reale ricostruita pixel per pixel: quota di riferimento dalla geolocation grid dello .xml piu' quota residua stimata dal periodogramma multi-baseline sui .tiff VH, con maschera di qualita' sulla coerenza di fit. Prima il 3D mostrava solo piramidi geometriche ideali disegnate da costanti scritte a mano."
+    },
+    {
+      "id": "F18",
+      "gravita": "nuovo",
+      "descrizione": "Vista 3D con molti gradi di liberta': imbardata, beccheggio, rollio, traslazione, zoom, prospettiva/ortografica, esagerazione verticale, doppia soglia in quota, soglia di intensita', piano di sezione, attributo di colore selezionabile, illuminazione orientabile, livelli commutabili, controlli da tastiera e rispetto di prefers-reduced-motion."
+    },
+    {
+      "id": "F19",
+      "gravita": "basso",
+      "descrizione": "meta.json viene scritto una volta sola invece che due, e l'analisi dei profili non e' piu' annidata dentro la funzione di salvataggio."
+    },
+    {
+      "id": "F20",
+      "gravita": "basso",
+      "descrizione": "Ordinamento painter esplicito dal piu' lontano al piu' vicino, sia per i voxel sia per le facce della superficie. Prima l'ordine era ascendente su una profondita' di segno non verificato."
+    },
+    {
+      "id": "F21",
+      "gravita": "basso",
+      "descrizione": "Autotest interno (--selftest) che blocca le convenzioni di segno di apply_shift, del tracker sub-pixel e dell'interpolatore orbitale."
+    },
+    {
+      "id": "F22",
+      "gravita": "critico",
+      "descrizione": "La soglia di qualita' sulla superficie e' calibrata sulla DISTRIBUZIONE NULLA del periodogramma, non fissata a mano. Con 11 baseline e fasi puramente casuali il picco normalizzato ha gia' mediana 0.56 e 99mo percentile 0.80: una soglia scritta a mano a 0.35 accettava il 100 per cento dei pixel, rumore compreso, e faceva sembrare misurato cio' che non lo era."
+    },
+    {
+      "id": "F23",
+      "gravita": "alto",
+      "descrizione": "Stimatore di coerenza corretto. Poiche' y_i = s_i*conj(s_m)/|s_m|, la media di y_i NON e' la media di s_i*conj(s_m): la coerenza va ricostruita ripesando per l'ampiezza del master, altrimenti e' uno stimatore diverso e distorto."
+    },
+    {
+      "id": "F24",
+      "gravita": "critico",
+      "descrizione": "L'impronta delle piramidi e' calcolata nella GEOMETRIA RADAR, proiettando in avanti la superficie 3D attraverso range-Doppler, non come impronta al suolo. Un punto a 138 m di quota si sposta di h*cos(theta) in slant range, cioe' ~48 pixel: la maschera al suolo NON copriva i pixel dove l'apice cade davvero, e quindi calibrazione del segno e validazione guardavano i pixel sbagliati."
+    },
+    {
+      "id": "F28",
+      "gravita": "nuovo",
+      "descrizione": "L'area processata e' stretta sulle sole piramidi in GEOMETRIA RADAR piu' un margine di 150 m, invece di un rettangolo di 1.8 x 2.2 km su tutta la piana. Il ritaglio comprende lo spostamento in slant dovuto alla quota, altrimenti gli apici resterebbero fuori. Le celle da elaborare scendono da ~50 000 a ~8 000: il calcolo e' piu' rapido, il rendering 3D e' fluido, e la statistica non e' piu' diluita dal deserto circostante. --full-scene ripristina il comportamento precedente."
+    },
+    {
+      "id": "F29",
+      "gravita": "critico",
+      "descrizione": "La vista 3D non rispondeva ai comandi. Due cause: con prefers-reduced-motion attivo il ciclo di disegno non partiva affatto e la pagina restava all'unico fotogramma iniziale, quindi nessun cursore aveva effetto; e senza quell'impostazione il disegno rifaceva a ogni fotogramma 8 000 poligoni ordinati, con la stringa di colore ricostruita ogni volta, a pochi fotogrammi al secondo. Ora il disegno e' a richiesta su flag di aggiornamento, i vertici sono proiettati una volta sola per fotogramma invece di quattro volte per poligono, i colori vengono da una tabella precalcolata, e durante il trascinamento si disegna a risoluzione ridotta."
+    },
+    {
+      "id": "F27",
+      "gravita": "medio",
+      "descrizione": "Despicatura dichiarata della superficie per il rendering: i nodi che si discostano dalla mediana locale piu' di 3 sigma_h sono errori grossolani di aggancio su un lobo laterale, valgono centinaia di metri e da soli dominavano la scala delle quote, rendendo illeggibile una superficie che per il 98 per cento sta in poche decine di metri. La quota grezza resta nei .npy; il conteggio delle sostituzioni e' riportato."
+    },
+    {
+      "id": "F26",
+      "gravita": "concettuale",
+      "descrizione": "Il canale VH e' documentato come una SCELTA, con la sua misura di costo. La versione precedente lo giustificava come 'cross-pol, sensibile allo scattering di volume e alla vibrazione del suolo'. La misura dice il contrario: nella zona di layover le piramidi emergono di +1.7 dB in VH e di +8.4 dB in VV, e il picco su Cheope vale +10.5 dB in VH contro +22.2 dB in VV. Il ritorno delle facce a gradoni e' co-polarizzato; il cross-pol butta via oltre 10 dB proprio sui bersagli da misurare. Il programma resta su VH come richiesto, ma misura e riporta il costo, e --pol vv permette il confronto diretto."
+    },
+    {
+      "id": "F25",
+      "gravita": "alto",
+      "descrizione": "La validazione di livello 1 e' una REGRESSIONE fra quota misurata e quota simulata in geometria radar su tutti i pixel di qualita', non il percentile 90 della quota dentro l'impronta al suolo. Con le facce in layover il percentile 90 misurava la coda del rumore e restituiva rilievi di 300 m dove ce ne sono 138."
+    },
+    {
+      "id": "F30",
+      "gravita": "alto",
+      "descrizione": "La superficie misurata non e' piu' disegnata come maglia di poligoni ne' come campo continuo di celle: e' una NUVOLA DI PUNTI, un punto per nodo misurato, sia nella vista 3D sia nel pannello matplotlib. Il poligono univa quattro nodi qualsiasi e riempiva il vuoto fra di essi, quindi mostrava come superficie continua un campo in cui solo il 23 per cento delle celle supera la soglia calibrata sul nullo: il 77 per cento del colore sullo schermo era interpolazione, non misura. I nodi sotto soglia restano visibili come punti piccoli e spenti, e non passano piu' per misura solo perche' un vicino affidabile li tirava dentro un poligono; il filtro sulle celle di qualita' li toglie del tutto. Le sole maglie rimaste sono i riferimenti dichiarati - piramidi ideali e superficie simulata - che non sono misure. Il disegno resta sul budget di F29: i dischetti vengono da un atlante precalcolato, uno per colore della tabella, e in movimento la nuvola si decima di un fattore due per riga e colonna."
+    },
+    {
+      "id": "F31",
+      "gravita": "critico",
+      "descrizione": "Il canale di coerenza del micro-moto era vuoto. Era calcolato come |media(dev)| / media(|dev|) con dev = shifts - media(shifts): il numeratore e' la media di un vettore appena demediato, cioe' zero per costruzione, su ogni pixel e per qualsiasi dato. Il canale esisteva, veniva salvato in mm_coh.npy e non conteneva nulla. Ora la domanda e' quella del modello a 2 gradi di liberta' (ch12): la traccia e' un tono singolo o rumore bianco? Si risponde con lo spettro della traccia - che e' il blocco 9 delle fonti applicato alla singola marcia - e la misura e' la CONCENTRAZIONE spettrale, cioe' la quota di energia nella riga dominante esclusa la continua: 1 per un tono puro, 1/(N_D-1) = 0.091 per rumore bianco con N_D = 12. Insieme alla concentrazione viene ora riportata la frequenza meccanica della riga dominante, coerente con N_D come frequenza di campionamento della vibrazione (ch11), e la frazione di celle la cui riga cade dentro la banda osservabile dichiarata dal banco."
+    },
+    {
+      "id": "F32",
+      "gravita": "nuovo",
+      "descrizione": "Tre livelli nuovi nella scena 3D. (a) SUPERFICIE DI RIFERIMENTO: le quote dei pixel lette dalla geolocation grid degli .annotation.xml e interpolate con la bilineare locale di F14/F36, disegnate come fondale a filo di ferro. Non e' un DEM del plateau: sono 231 nodi su tutto lo swath, e sul ritaglio delle piramidi l'escursione totale e' di poco piu' di due metri; il valore e' scritto nella barra laterale perche' chi guarda non la scambi per topografia. (b) PUNTI DI MICRO-MOTO: un punto per pixel la cui traccia di vibrazione supera la soglia di concentrazione spettrale di F31, colorato sull'energia. Poggiano sulla superficie .xml perche' il micro-moto e' un attributo di superficie: il banco di sub-aperture non gli assegna una profondita', e disegnarlo a quote diverse suggerirebbe una tomografia che questi dati non fanno. (c) STRUTTURE INTERNE NOTE di Cheope e Chefren, prese da piramide_cheope_3d.py e piramide_kefren_3d.py, che restano la sorgente unica di quelle quote. Sono un riferimento archeologico e sono disegnate come tale, a filo di ferro e mai come punti: con delta_z verticale di 242 m e camere che misurano metri, nessuna di esse e' rilevabile da questi dati, e la sovrapposizione serve a dare la scala di quel divario, non a suggerire una rilevazione."
+    },
+    {
+      "id": "F33",
+      "gravita": "nuovo",
+      "descrizione": "Quattro correzioni alla scena 3D (goal utente 2026-08-31). (a) La superficie SIMULATA (il layover geometrico di simulate_pyramids_radar) non e' piu' disegnata: restava l'ultima delle maglie di riferimento che poteva essere confusa con una ricostruzione. La simulazione resta internamente per la validazione di livello 1 (regressione misurato-vs-simulato, F25) e per pyr_mask: non e' un risultato, e' un termine di paragone, e ora si vede solo li'. (b) La superficie di riferimento .xml e i punti di micro-moto che vi poggiano hanno un proprio reticolo (xml_ref), l'intera griglia multilooked n_l x n_p, mai decimato da surface_max_nodes: prima condividevano il reticolo rado della nuvola misurata e coincidevano con l'intera griglia solo per la dimensione di questo dataset, non per costruzione. (c) Le piramidi ideali e le strutture interne note condividono esattamente centro, angolo di rotazione (azimuth_deg, oggi 0 per tutte e tre) e quota di base, e sono proiettate dalla stessa project() rigida della vista: restano solidali sotto qualunque imbardata, beccheggio o rollio, verificato a vista ruotando la scena. (d) I voxel sono ora colorati per indice di PIENO/VUOTO (solidity_index, F31: energia del periodogramma x coerenza x (1 - micro-moto), quindi il micro-moto entra nel colore), non piu' per la sola ampiezza; il valore esportato e' ristirato per percentili solo ai fini del colore, il dato scientifico in solidity.npy resta la formula dichiarata. Resta un discriminante multi-attributo, non una rilevazione di cavita' risolta in profondita' (avvertenza invariata, ch08-ch09)."
+    },
+    {
+      "id": "F34",
+      "gravita": "alto",
+      "descrizione": "La superficie .xml (F33) non si vedeva come pixel. Era disegnata come maglia di quadrilateri semitrasparenti: su un terreno quasi piatto (poco piu' di 2 m di escursione sul ritaglio) il riempimento si fondeva otticamente con la griglia di sfondo a 100 m, e i singoli pixel del reticolo xml_ref non erano piu' riconoscibili come tali, anche se il dato sotto era gia' corretto e completo (F33). Ora e' un punto per pixel, come la nuvola misurata (F30), colorato sulla propria quota con una rampa grigio-acciaio dedicata (mai la rampa calda della misura, cosi' il riferimento resta riconoscibile), disegnato con lo stesso atlante precalcolato del resto della scena (F29) per restare fluido sugli ~8 000 pixel del ritaglio anche in movimento."
+    },
+    {
+      "id": "F35",
+      "gravita": "chiarimento",
+      "descrizione": "F34 documentava il quasi-piano di xml_ref (~2 m di escursione) come un fatto del ritaglio, senza spiegare la causa: i punti della geolocation grid dello .xml sono posizioni fisiche di pixel con una quota propria, NON un piano -- sull'intera scena il rilievo vero arriva a centinaia di metri (raw_gcp_nodes). Ma quella grid ha solo 11 x 21 = 231 nodi su tutta la scena, spaziati circa 1500 linee x 1300 pixel, mentre il ritaglio delle piramidi ne occupa una piccola frazione di UNO: nessun nodo reale cade abbastanza vicino da portare rilievo dentro la spline locale (height_ref/xml_ref), che quindi esce correttamente quasi piatta -- limite di risoluzione del riferimento .xml, non errore di calcolo. Ora i nodi grezzi (non interpolati) sono esposti nel payload e in un pannello dedicato della UI, con la distanza del nodo piu' vicino e il rilievo vero sulla scena, cosi' il limite e' ispezionabile invece che implicito."
+    },
+    {
+      "id": "F36",
+      "gravita": "critico",
+      "descrizione": "F35 spiegava perche' xml_ref esce quasi piatta, ma Geocoder usava ancora una spline bicubica GLOBALE (kx=ky=3) su tutti e 231 i nodi della scena: verificato sui quattro nodi VERI che racchiudono il ritaglio delle piramidi (linee 7540/9048, pixel 1304/2608, quote 80.0/51.0/64.0/64.0 m -- 29 m di escursione fra loro), la spline dava 70.0 m al centro del ritaglio mentre la bilineare fra quei quattro nodi da' 63.7 m: 6 m di differenza per curvatura importata da nodi a decine di km, non dal terreno locale. Il ritaglio sta interamente dentro UNA cella del reticolo (F35): la geocodifica ora usa RegularGridInterpolator bilineare, che per un punto in una cella usa esclusivamente i quattro nodi reali di quella cella -- i valori letti dallo .xml corrispondente, non un adattamento globale. L'estrapolazione lineare oltre il bordo del reticolo (fill_value=None) sostituisce la vecchia estrapolazione della spline, con lo stesso comportamento definito ovunque."
+    },
+    {
+      "id": "F37",
+      "gravita": "richiesta",
+      "descrizione": "Rimosso lo strato 3D 'Superficie .xml' (drawRef/buildRefColors/XCIDX): su questo ritaglio la quota di riferimento varia di poco piu' di 1 m (F35/F36), quindi disegnata come nuvola propria non aggiungeva nulla che il pannello 'Nodi grezzi della geolocation grid' non mostrasse gia' in forma numerica ispezionabile. NOTA sui file .xml: non esiste un tag <position> con la quota dei singoli pixel -- i 17 nodi <position> dell'annotation.xml sono i VETTORI DI STATO ORBITALI del satellite (coordinate ECEF x/y/z), non posizioni al suolo. L'unica quota per pixel nello .xml e' <geolocationGridPoint><height>, 231 nodi per scena: e' quella che height_ref/xml_ref usano (F36), presa dal file .annotation.xml del MASTER -- l'unico geometricamente corretto da usare per l'intero stack, perche' tutte le date sono coregistrate sul suo reticolo di pixel."
+    },
+    {
+      "id": "F38",
+      "gravita": "richiesta",
+      "descrizione": "Aggiunto il layer 'suolo (DEM)', portato da _fetch_dem() di piramide_acustica_vh.py / piramide_unificato.py (Piramid_V3): un DEM ESTERNO vero (Copernicus via l'API di elevazione Open-Meteo), campionato su un reticolo fitto SOLO nell'area del ritaglio e interpolato (RegularGridInterpolator bilineare) sulla stessa griglia (east, north) di height_ref. Risolve il rilievo che la geolocation grid dello .xml non puo' dare a questa scala (F35/F36): verificato, 18..94 m di escursione su un campione dello stesso ritaglio, contro gli ~1 m della bilineare .xml. E' un RIFERIMENTO esterno (fetch_dem_suolo(), cache in dem_suolo.npz, disattivabile con cfg.fetch_dem=False), non entra in nessun calcolo tomografico: la geometria .xml resta l'unica usata per fase, k_z e geocodifica. CORRETTO da F39: vedi sotto."
+    },
+    {
+      "id": "F39",
+      "gravita": "richiesta",
+      "descrizione": "Il 'suolo (DEM)' di F38 non seguiva il profilo delle piramidi e non era sul datum dei dati. Tre difetti, tutti verificati sui dati. (a) Il DEM esterno le piramidi non le contiene: interrogando l'API di elevazione esattamente sui tre apici noti restituisce 66 / 76 / 78 m, cioe' il plateau nudo -- l'apice di Cheope, che sta a ~198 m, usciva 130 m piu' in basso e il 'suolo' passava DENTRO le piramidi invece di seguirne le facce. Non era il passo del reticolo: anche interrogando il singolo punto dell'apice il valore resta 66 m. (b) Il livello veniva da un dataset con un datum verticale suo: 68.6 m di mediana sul ritaglio e 75.5 m sotto Cheope, contro i 63.1..64.2 m delle quote .xml, cioe' fino a ~12 m di scarto rispetto alla superficie misurata, che poggia sul datum .xml. (c) Se lo scaricamento falliva il layer spariva del tutto. Ora ground_dem_suolo() lo costruisce in tre pezzi dichiarati: DATUM = le quote lette dai file di stack_slc (<geolocationGridPoint><height> degli annotation.xml, bilineare locale del master, F36), lette da TUTTE le date come controllo di consistenza (plateau_heights_from_stack(): 11 date VH IW2, tutte 64.0 m sul nodo grezzo piu' vicino, che cade a 2.2-3.2 km); RILIEVO = il DEM esterno riportato su quel datum togliendo il suo scarto mediano sull'impronta delle piramidi, e senza rete resta la bilineare .xml, cosi' il layer c'e' comunque; PIRAMIDI = pyramid_profile_enu(), z = base + altezza * (1 - max(|dx|,|dy|)/semilato) sul reticolo ENU, con la base presa dal terreno sotto ciascuna impronta (non dal base_alt_m di letteratura) perche' il layer sia continuo con il terreno intorno, composto con np.maximum. Corretto anche il reticolo di query: l'API accetta 100 coordinate per richiesta e prima se ne mandava una sola, quindi il reticolo era bloccato a 10x10 (~170 m di passo); ora la richiesta e' spezzata in blocchi e cfg.dem_grid vale 24 (~70 m). Interruttori: cfg.suolo_dem (il layer), cfg.fetch_dem (il rilievo esterno), cfg.dem_pyramids (il profilo delle piramidi)."
+    }
+  ],
+  "avvertenza": "La superficie e' una misura: quota di riferimento dallo .xml piu' quota del diffusore dominante stimata dai .tiff. La sua precisione e' ~16 m. La RISOLUZIONE verticale e' 242 m: nessuna struttura interna e' separabile. L'indice di solidita' e' un discriminante multi-attributo, non una rilevazione di cavita'."
+}

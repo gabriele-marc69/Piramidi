@@ -70,3 +70,18 @@ s1d/
 .cdse.env
 download.log
 download.err.log
+
+# ---- Dati Sentinel-1 scaricati da CDSE (decine di GB, mai nel repository) ----
+DATA_Ghiza/
+scarico.log
+manifest_scarico.json
+
+# ---- Cache di mypy ----
+.mypy_cache/
+
+# ---- Deroga: i prodotti della corsa piramidi_v02 fanno parte del repository ----
+# Sono .npy/.npz/.png/.html, che le regole generiche qui sopra escludono: sono
+# il risultato pubblicato della pipeline, non dati grezzi rigenerabili a costo
+# zero, quindi vanno versionati (21 MB in tutto).
+!out_piramidi_v02/
+!out_piramidi_v02/**
