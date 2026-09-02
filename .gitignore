@@ -73,8 +73,13 @@ download.err.log
 
 # ---- Dati Sentinel-1 scaricati da CDSE (decine di GB, mai nel repository) ----
 DATA_Ghiza/
+DATA_Ghiza_*/
 scarico.log
 manifest_scarico.json
+
+# ---- Altre credenziali, per sicurezza ----
+*.env
+.netrc
 
 # ---- Cache di mypy ----
 .mypy_cache/

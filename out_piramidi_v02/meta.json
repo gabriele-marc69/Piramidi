@@ -1,215 +1,562 @@
 {
-  "generato": "2026-08-31 16:13:44",
+  "generato": "2026-09-02 14:45:20",
   "programma": "piramidi_v02.py (revisione 2026-08-28)",
   "metodo": "stack interferometrico multi-baseline VH + periodogramma in quota + attributi di micro-moto Doppler",
   "polarizzazione": "VH (cross-pol, scattering di volume)",
   "sorgente_geometria": "annotation.xml (orbite, geolocation grid, quota di riferimento)",
   "sorgente_misura": "tiff VH, pixel per pixel",
   "date": [
+    "20260103",
     "20260109",
+    "20260115",
     "20260121",
+    "20260127",
     "20260202",
+    "20260208",
     "20260214",
+    "20260220",
     "20260226",
+    "20260304",
     "20260310",
+    "20260316",
     "20260322",
+    "20260328",
     "20260403",
+    "20260409",
     "20260415",
+    "20260421",
     "20260427",
-    "20260509"
+    "20260428",
+    "20260503",
+    "20260509",
+    "20260521",
+    "20260522",
+    "20260527",
+    "20260608",
+    "20260615",
+    "20260620"
   ],
-  "master": "20260310",
+  "master": "20260328",
   "coregistrazione": [
     {
-      "data": "20260109",
-      "b_perp_m": 61.51,
-      "b_temp_giorni": -60.0,
+      "data": "20260103",
+      "b_perp_m": 101.58,
+      "b_temp_giorni": -84.0,
       "shift_px": [
-        -0.1,
-        1.15
+        1.2,
+        -0.0
       ],
+      "offset_finestra_px": [
+        -8,
+        -10
+      ],
+      "burst": 2,
       "sorgente_shift": "corr",
-      "psr": 20.18
+      "psr": 11.22
+    },
+    {
+      "data": "20260109",
+      "b_perp_m": -23.2,
+      "b_temp_giorni": -78.0,
+      "shift_px": [
+        1.25,
+        -0.0
+      ],
+      "offset_finestra_px": [
+        4501,
+        63
+      ],
+      "burst": 5,
+      "sorgente_shift": "corr",
+      "psr": 11.2
+    },
+    {
+      "data": "20260115",
+      "b_perp_m": 63.0,
+      "b_temp_giorni": -72.0,
+      "shift_px": [
+        1.2,
+        1.05
+      ],
+      "offset_finestra_px": [
+        -6,
+        -1
+      ],
+      "burst": 2,
+      "sorgente_shift": "corr",
+      "psr": 15.23
     },
     {
       "data": "20260121",
-      "b_perp_m": 138.55,
-      "b_temp_giorni": -48.0,
+      "b_perp_m": 53.84,
+      "b_temp_giorni": -66.0,
       "shift_px": [
-        0.537,
-        -27.983
+        0.002,
+        -0.301
       ],
+      "offset_finestra_px": [
+        4502,
+        34
+      ],
+      "burst": 5,
       "sorgente_shift": "geo",
-      "psr": 10.3
+      "psr": 9.84
+    },
+    {
+      "data": "20260127",
+      "b_perp_m": -38.13,
+      "b_temp_giorni": -60.0,
+      "shift_px": [
+        1.05,
+        1.0
+      ],
+      "offset_finestra_px": [
+        -13,
+        27
+      ],
+      "burst": 2,
+      "sorgente_shift": "corr",
+      "psr": 12.21
     },
     {
       "data": "20260202",
-      "b_perp_m": 162.52,
-      "b_temp_giorni": -36.0,
+      "b_perp_m": 77.81,
+      "b_temp_giorni": -54.0,
       "shift_px": [
-        0.789,
-        -46.616
+        0.254,
+        0.066
       ],
+      "offset_finestra_px": [
+        4502,
+        15
+      ],
+      "burst": 5,
       "sorgente_shift": "geo",
-      "psr": 15.71
+      "psr": 10.04
+    },
+    {
+      "data": "20260208",
+      "b_perp_m": -51.07,
+      "b_temp_giorni": -48.0,
+      "shift_px": [
+        -0.0,
+        0.15
+      ],
+      "offset_finestra_px": [
+        -9,
+        25
+      ],
+      "burst": 2,
+      "sorgente_shift": "corr",
+      "psr": 12.16
     },
     {
       "data": "20260214",
-      "b_perp_m": 102.04,
-      "b_temp_giorni": -24.0,
+      "b_perp_m": 17.33,
+      "b_temp_giorni": -42.0,
       "shift_px": [
-        0.1,
-        -21.05
+        -0.295,
+        0.177
       ],
+      "offset_finestra_px": [
+        4502,
+        40
+      ],
+      "burst": 5,
+      "sorgente_shift": "geo",
+      "psr": 10.34
+    },
+    {
+      "data": "20260220",
+      "b_perp_m": 0.63,
+      "b_temp_giorni": -36.0,
+      "shift_px": [
+        1.05,
+        -0.1
+      ],
+      "offset_finestra_px": [
+        -2,
+        4
+      ],
+      "burst": 2,
       "sorgente_shift": "corr",
-      "psr": 10.19
+      "psr": 18.72
     },
     {
       "data": "20260226",
-      "b_perp_m": 47.46,
-      "b_temp_giorni": -12.0,
+      "b_perp_m": -37.24,
+      "b_temp_giorni": -30.0,
       "shift_px": [
-        0.459,
-        -11.649
+        -0.076,
+        0.033
       ],
+      "offset_finestra_px": [
+        4502,
+        50
+      ],
+      "burst": 5,
       "sorgente_shift": "geo",
-      "psr": 12.61
+      "psr": 8.82
+    },
+    {
+      "data": "20260304",
+      "b_perp_m": 40.64,
+      "b_temp_giorni": -24.0,
+      "shift_px": [
+        1.15,
+        -0.15
+      ],
+      "offset_finestra_px": [
+        -2,
+        -7
+      ],
+      "burst": 2,
+      "sorgente_shift": "corr",
+      "psr": 13.57
     },
     {
       "data": "20260310",
+      "b_perp_m": -84.71,
+      "b_temp_giorni": -18.0,
+      "shift_px": [
+        0.465,
+        -0.318
+      ],
+      "offset_finestra_px": [
+        4501,
+        62
+      ],
+      "burst": 5,
+      "sorgente_shift": "geo",
+      "psr": 9.84
+    },
+    {
+      "data": "20260316",
+      "b_perp_m": -7.78,
+      "b_temp_giorni": -12.0,
+      "shift_px": [
+        1.15,
+        -0.1
+      ],
+      "offset_finestra_px": [
+        0,
+        2
+      ],
+      "burst": 2,
+      "sorgente_shift": "corr",
+      "psr": 17.22
+    },
+    {
+      "data": "20260322",
+      "b_perp_m": -44.94,
+      "b_temp_giorni": -6.0,
+      "shift_px": [
+        -0.266,
+        0.403
+      ],
+      "offset_finestra_px": [
+        4504,
+        53
+      ],
+      "burst": 5,
+      "sorgente_shift": "geo",
+      "psr": 11.72
+    },
+    {
+      "data": "20260328",
       "b_perp_m": 0.0,
       "b_temp_giorni": 0.0,
       "shift_px": [
         0.0,
         0.0
       ],
+      "offset_finestra_px": [
+        0,
+        0
+      ],
+      "burst": 2,
       "sorgente_shift": "master",
       "psr": null
     },
     {
-      "data": "20260322",
-      "b_perp_m": 39.77,
-      "b_temp_giorni": 12.0,
+      "data": "20260403",
+      "b_perp_m": 17.99,
+      "b_temp_giorni": 6.0,
       "shift_px": [
-        2.269,
-        -8.279
+        -0.362,
+        0.261
       ],
+      "offset_finestra_px": [
+        4504,
+        34
+      ],
+      "burst": 5,
       "sorgente_shift": "geo",
-      "psr": 11.75
+      "psr": 8.79
     },
     {
-      "data": "20260403",
-      "b_perp_m": 102.7,
-      "b_temp_giorni": 24.0,
+      "data": "20260409",
+      "b_perp_m": -13.72,
+      "b_temp_giorni": 12.0,
       "shift_px": [
-        2.173,
-        -27.421
+        -0.226,
+        0.165
       ],
+      "offset_finestra_px": [
+        -3,
+        6
+      ],
+      "burst": 2,
       "sorgente_shift": "geo",
-      "psr": 9.13
+      "psr": 12.35
     },
     {
       "data": "20260415",
-      "b_perp_m": 22.3,
-      "b_temp_giorni": 36.0,
+      "b_perp_m": -62.41,
+      "b_temp_giorni": 18.0,
       "shift_px": [
-        2.128,
-        -4.42
+        -0.407,
+        0.262
       ],
+      "offset_finestra_px": [
+        4504,
+        57
+      ],
+      "burst": 5,
       "sorgente_shift": "geo",
-      "psr": 11.49
+      "psr": 10.69
+    },
+    {
+      "data": "20260421",
+      "b_perp_m": -42.33,
+      "b_temp_giorni": 24.0,
+      "shift_px": [
+        1.3,
+        -0.05
+      ],
+      "offset_finestra_px": [
+        3,
+        -2
+      ],
+      "burst": 2,
+      "sorgente_shift": "corr",
+      "psr": 11.78
     },
     {
       "data": "20260427",
-      "b_perp_m": 72.92,
-      "b_temp_giorni": 48.0,
+      "b_perp_m": -11.79,
+      "b_temp_giorni": 30.0,
       "shift_px": [
-        3.646,
-        -37.608
+        0.111,
+        0.074
       ],
+      "offset_finestra_px": [
+        4505,
+        24
+      ],
+      "burst": 5,
       "sorgente_shift": "geo",
-      "psr": 10.66
+      "psr": 10.4
+    },
+    {
+      "data": "20260428",
+      "b_perp_m": 16.35,
+      "b_temp_giorni": 31.0,
+      "shift_px": [
+        -1.0,
+        -0.9
+      ],
+      "offset_finestra_px": [
+        4535,
+        15
+      ],
+      "burst": 5,
+      "sorgente_shift": "corr",
+      "psr": 12.38
+    },
+    {
+      "data": "20260503",
+      "b_perp_m": 101.52,
+      "b_temp_giorni": 36.0,
+      "shift_px": [
+        -0.452,
+        0.267
+      ],
+      "offset_finestra_px": [
+        -7,
+        -43
+      ],
+      "burst": 2,
+      "sorgente_shift": "geo",
+      "psr": 9.18
     },
     {
       "data": "20260509",
-      "b_perp_m": 9.55,
+      "b_perp_m": -75.16,
+      "b_temp_giorni": 42.0,
+      "shift_px": [
+        0.05,
+        -0.0
+      ],
+      "offset_finestra_px": [
+        4505,
+        44
+      ],
+      "burst": 5,
+      "sorgente_shift": "corr",
+      "psr": 11.81
+    },
+    {
+      "data": "20260521",
+      "b_perp_m": -28.73,
+      "b_temp_giorni": 54.0,
+      "shift_px": [
+        0.025,
+        -0.263
+      ],
+      "offset_finestra_px": [
+        4531,
+        39
+      ],
+      "burst": 5,
+      "sorgente_shift": "geo",
+      "psr": 10.17
+    },
+    {
+      "data": "20260522",
+      "b_perp_m": -41.09,
+      "b_temp_giorni": 55.0,
+      "shift_px": [
+        -1.1,
+        -1.1
+      ],
+      "offset_finestra_px": [
+        4534,
+        40
+      ],
+      "burst": 5,
+      "sorgente_shift": "corr",
+      "psr": 16.06
+    },
+    {
+      "data": "20260527",
+      "b_perp_m": 188.16,
       "b_temp_giorni": 60.0,
       "shift_px": [
-        3.738,
-        -17.665
+        0.233,
+        -0.055
       ],
+      "offset_finestra_px": [
+        -5,
+        -55
+      ],
+      "burst": 2,
       "sorgente_shift": "geo",
-      "psr": 10.24
+      "psr": 11.62
+    },
+    {
+      "data": "20260608",
+      "b_perp_m": 130.3,
+      "b_temp_giorni": 72.0,
+      "shift_px": [
+        1.05,
+        1.1
+      ],
+      "offset_finestra_px": [
+        -4,
+        -42
+      ],
+      "burst": 2,
+      "sorgente_shift": "corr",
+      "psr": 13.36
+    },
+    {
+      "data": "20260615",
+      "b_perp_m": -1.21,
+      "b_temp_giorni": 79.0,
+      "shift_px": [
+        -0.8,
+        -0.05
+      ],
+      "offset_finestra_px": [
+        4535,
+        29
+      ],
+      "burst": 5,
+      "sorgente_shift": "corr",
+      "psr": 15.3
+    },
+    {
+      "data": "20260620",
+      "b_perp_m": 106.74,
+      "b_temp_giorni": 84.0,
+      "shift_px": [
+        0.454,
+        0.349
+      ],
+      "offset_finestra_px": [
+        -6,
+        -42
+      ],
+      "burst": 2,
+      "sorgente_shift": "geo",
+      "psr": 11.38
     }
   ],
   "budget": {
     "wavelength": 0.05546576,
-    "slant_range": 850862.9338708892,
-    "incidence_deg": 36.847537994384766,
-    "b_spread": 162.51519287256315,
-    "b_std": 52.60733852631091,
-    "n_baselines": 11,
-    "delta_z_slant": 145.19799179632935,
-    "delta_z_vertical": 242.12265576694494,
-    "ambiguity_height": 2936.878868382648,
+    "slant_range": 850840.3286174089,
+    "incidence_deg": 36.84174346923828,
+    "b_spread": 272.87162315934796,
+    "b_std": 66.81771160560989,
+    "n_baselines": 29,
+    "delta_z_slant": 86.47382406241537,
+    "delta_z_vertical": 144.21754559373176,
+    "ambiguity_height": 6192.939717101742,
     "target_height": 138.5,
-    "gamma_typ": 0.4971877634525299,
-    "sigma_h": 15.928058452052225
+    "gamma_typ": 0.29820775985717773,
+    "sigma_h": 14.163858583577312
   },
   "budget_a_priori": {
     "wavelength": 0.05546576,
-    "slant_range": 850862.9338708892,
-    "incidence_deg": 36.847537994384766,
-    "b_spread": 162.51519287256315,
-    "b_std": 52.60733852631091,
-    "n_baselines": 11,
-    "delta_z_slant": 145.19799179632935,
-    "delta_z_vertical": 242.12265576694494,
-    "ambiguity_height": 2936.878868382648,
+    "slant_range": 850840.3286174089,
+    "incidence_deg": 36.84174346923828,
+    "b_spread": 272.87162315934796,
+    "b_std": 66.81771160560989,
+    "n_baselines": 29,
+    "delta_z_slant": 86.47382406241537,
+    "delta_z_vertical": 144.21754559373176,
+    "ambiguity_height": 6192.939717101742,
     "target_height": 138.5,
     "gamma_typ": 0.6,
-    "sigma_h": 12.169730343252535
+    "sigma_h": 5.900147618943478
   },
-  "coerenza_mediana_misurata": 0.4972,
-  "soglia_qualita_gamma": 0.7908,
+  "coerenza_mediana_misurata": 0.2982,
+  "soglia_qualita_gamma": 0.522,
   "distribuzione_nulla_periodogramma": {
-    "mediana_nulla": 0.561,
-    "p90_nulla": 0.6838,
-    "p99_nulla": 0.7908,
-    "p99_9_nulla": 0.8704,
-    "soglia_usata": 0.7908,
+    "mediana_nulla": 0.3557,
+    "p90_nulla": 0.4389,
+    "p99_nulla": 0.522,
+    "p99_9_nulla": 0.598,
+    "soglia_usata": 0.522,
     "percentile_usato": 99.0,
     "prove": 20000
   },
-  "nodi_despicati": 156,
+  "nodi_despicati": 435,
   "contrasto_per_polarizzazione": {
     "vh": {
-      "data": "20260310",
-      "fondo_dB": 35.91,
+      "data": "20260328",
+      "fondo_dB": -13.6,
       "contrasto_per_fascia_dB": {
-        "layover_alto_gt80m": 1.61,
-        "medio_40_80m": 2.38,
-        "basso_lt40m": -0.68
+        "layover_alto_gt80m": 1.75,
+        "medio_40_80m": 1.27,
+        "basso_lt40m": 0.27
       },
       "picco_dB": {
-        "Cheope (Khufu)": 11.44,
+        "Cheope (Khufu)": 12.23,
         "Chefren (Khafre)": 6.9
       }
-    },
-    "vv": {
-      "data": "20260310",
-      "fondo_dB": 42.23,
-      "contrasto_per_fascia_dB": {
-        "layover_alto_gt80m": 0.72,
-        "medio_40_80m": 8.05,
-        "basso_lt40m": -0.65
-      },
-      "picco_dB": {
-        "Cheope (Khufu)": 22.63,
-        "Chefren (Khafre)": 9.09
-      }
-    },
-    "conclusione": "Il ritorno delle piramidi e' co-polarizzato: picco su Cheope +22.6 dB in VV contro +11.4 dB in VH. Usare VH costa 11.2 dB proprio sui bersagli da misurare. La scelta del canale e' rispettata come richiesta, ma il costo e' misurato e dichiarato, non giustificato a parole."
+    }
   },
   "piano_sub_aperture": {
     "b_cd": 313.0,
@@ -218,33 +565,33 @@
     "b_shift": 28.169999999999998,
     "step": 11.666363636363638,
     "n_d": 12,
-    "df_bin": 2.182897913073669,
-    "bins_per_sub": 71.69368712238006,
-    "k_a": -2187.7622984719087,
-    "k_t": 1491.3157613151864,
-    "t_illum": 0.14306855923910097,
-    "dt_step": 0.0053325553898210375,
-    "dt_shift": 0.012876170331519088,
-    "t_window": 0.05865810928803141,
-    "f_sample": 187.52735356651596,
-    "f_max_obs": 38.83142169811695,
-    "f_min_obs": 17.047941233319634,
-    "aperture_m": 958.5593469019765,
-    "lambda_sound_m": 154.51404397822904,
+    "df_bin": 2.21622459876945,
+    "bins_per_sub": 70.61558656414878,
+    "k_a": -2187.9934090253596,
+    "k_t": 1491.418909380036,
+    "t_illum": 0.14305344737735096,
+    "dt_step": 0.005331992129519445,
+    "dt_shift": 0.012874810263961586,
+    "t_window": 0.058651913424713896,
+    "f_sample": 187.54716355707123,
+    "f_max_obs": 38.83552376686829,
+    "f_min_obs": 17.04974214155193,
+    "aperture_m": 958.4580974282514,
+    "lambda_sound_m": 154.49772316753902,
     "delta_z_acoustic": 68507.46268656716
   },
-  "segno_k_z": 1.0,
+  "segno_k_z": -1.0,
   "layover": {
-    "angolo_di_incidenza_deg": 36.85,
+    "angolo_di_incidenza_deg": 36.84,
     "angolo_di_vista_off_nadir_deg": 32.74,
-    "soglia_layover_deg": 36.85,
-    "soglia_ombra_deg": 53.15,
+    "soglia_layover_deg": 36.84,
+    "soglia_ombra_deg": 53.16,
     "piramidi": [
       {
         "piramide": "Cheope (Khufu)",
         "pendenza_faccia_deg": 51.84,
-        "incidenza_locale_faccia_vicina_deg": -14.99,
-        "incidenza_locale_faccia_lontana_deg": 88.69,
+        "incidenza_locale_faccia_vicina_deg": -15.0,
+        "incidenza_locale_faccia_lontana_deg": 88.68,
         "faccia_vicina": "layover",
         "faccia_lontana": "illuminata",
         "estensione_slant_faccia_vicina_m": 41.8,
@@ -253,8 +600,8 @@
       {
         "piramide": "Chefren (Khafre)",
         "pendenza_faccia_deg": 53.13,
-        "incidenza_locale_faccia_vicina_deg": -16.28,
-        "incidenza_locale_faccia_lontana_deg": 89.98,
+        "incidenza_locale_faccia_vicina_deg": -16.29,
+        "incidenza_locale_faccia_lontana_deg": 89.97,
         "faccia_vicina": "layover",
         "faccia_lontana": "illuminata",
         "estensione_slant_faccia_vicina_m": 44.6,
@@ -263,8 +610,8 @@
       {
         "piramide": "Micerino (Menkaure)",
         "pendenza_faccia_deg": 51.34,
-        "incidenza_locale_faccia_vicina_deg": -14.49,
-        "incidenza_locale_faccia_lontana_deg": 88.19,
+        "incidenza_locale_faccia_vicina_deg": -14.5,
+        "incidenza_locale_faccia_lontana_deg": 88.18,
         "faccia_vicina": "layover",
         "faccia_lontana": "illuminata",
         "estensione_slant_faccia_vicina_m": 18.2,
@@ -276,12 +623,12 @@
   "validazione": {
     "livello_1_geometria": {
       "regressione_misurato_vs_simulato": {
-        "pixel": 168,
-        "pendenza": -0.064,
-        "pendenza_theil_sen": -0.009,
+        "pixel": 102,
+        "pendenza": 0.748,
+        "pendenza_theil_sen": 0.099,
         "ic95": [
-          -0.058,
-          0.039
+          -0.016,
+          0.26
         ],
         "mediane_per_fascia": [
           {
@@ -289,101 +636,97 @@
               5,
               30
             ],
-            "celle": 54,
-            "misurato_mediano_m": 0.4
+            "celle": 34,
+            "misurato_mediano_m": 0.6
           },
           {
             "simulato_m": [
               30,
               60
             ],
-            "celle": 55,
-            "misurato_mediano_m": -2.5
+            "celle": 25,
+            "misurato_mediano_m": 2.8
           },
           {
             "simulato_m": [
               60,
               90
             ],
-            "celle": 34,
-            "misurato_mediano_m": -2.5
+            "celle": 27,
+            "misurato_mediano_m": 2.6
           },
           {
             "simulato_m": [
               90,
               null
             ],
-            "celle": 25,
-            "misurato_mediano_m": -5.0
+            "celle": 16,
+            "misurato_mediano_m": 9.0
           }
         ],
         "pendenza_attesa": 1.0,
-        "errore_standard_pendenza": 0.181,
-        "t_pendenza": -0.4,
-        "intercetta_m": 6.3,
-        "correlazione_r": -0.028,
-        "rmse_m": 75.0,
+        "errore_standard_pendenza": 0.437,
+        "t_pendenza": 1.7,
+        "intercetta_m": -67.3,
+        "correlazione_r": 0.169,
+        "rmse_m": 153.5,
         "esito": "nessuna dipendenza significativa dalla quota simulata"
       },
       "Cheope (Khufu)": {
-        "celle_simulate": 347,
-        "celle_di_qualita": 57,
-        "celle_di_sommita": 9,
-        "rilievo_misurato_m": 5.4,
-        "rilievo_simulato_m": 113.7,
-        "errore_m": -108.3,
-        "entro_2_sigma_h": false,
-        "rilievo_misurato_alla_base_m": 2.5
+        "celle_simulate": 345,
+        "celle_di_qualita": 48,
+        "celle_di_sommita": 3,
+        "rilievo_misurato_alla_base_m": -34.6
       },
       "Chefren (Khafre)": {
         "celle_simulate": 310,
-        "celle_di_qualita": 114,
-        "celle_di_sommita": 8,
-        "rilievo_misurato_m": -5.8,
-        "rilievo_simulato_m": 114.0,
-        "errore_m": -119.9,
+        "celle_di_qualita": 58,
+        "celle_di_sommita": 9,
+        "rilievo_misurato_m": 9.3,
+        "rilievo_simulato_m": 125.5,
+        "errore_m": -116.3,
         "entro_2_sigma_h": false,
-        "rilievo_misurato_alla_base_m": -6.6
+        "rilievo_misurato_alla_base_m": 4.0
       },
       "Micerino (Menkaure)": {
-        "celle_simulate": 76,
-        "celle_di_qualita": 13,
-        "celle_di_sommita": 4
+        "celle_simulate": 77,
+        "celle_di_qualita": 6,
+        "celle_di_sommita": 1
       },
-      "_quota_mediana_piana_m": 63.5,
-      "_sigma_h_attesa_m": 15.9,
-      "_soglia_qualita_gamma": 0.791,
+      "_quota_mediana_piana_m": 65.4,
+      "_sigma_h_attesa_m": 14.2,
+      "_soglia_qualita_gamma": 0.522,
       "_distribuzione_nulla": {
-        "mediana_nulla": 0.561,
-        "p90_nulla": 0.6838,
-        "p99_nulla": 0.7908,
-        "p99_9_nulla": 0.8704,
-        "soglia_usata": 0.7908,
+        "mediana_nulla": 0.3557,
+        "p90_nulla": 0.4389,
+        "p99_nulla": 0.522,
+        "p99_9_nulla": 0.598,
+        "soglia_usata": 0.522,
         "percentile_usato": 99.0,
         "prove": 20000
       },
       "_riferimento": "le quote note da letteratura archeologica entrano SOLO nella simulazione di confronto, mai nella catena che produce la superficie misurata"
     },
     "livello_2_misura": {
-      "pixel_buoni_frazione": 0.2171,
-      "gamma_mediana": 0.6781,
-      "gamma_p90": 0.873,
-      "dispersione_quota_sulla_piana_m": 84.7,
-      "sigma_h_teorica_m": 15.9,
+      "pixel_buoni_frazione": 0.2281,
+      "gamma_mediana": 0.4432,
+      "gamma_p90": 0.6007,
+      "dispersione_quota_sulla_piana_m": 122.7,
+      "sigma_h_teorica_m": 14.2,
       "nota": "la dispersione misurata sulla piana e' il controllo empirico della sigma_h teorica: se le due sono dello stesso ordine il budget di precisione e' onesto"
     },
     "livello_3_struttura": {
       "layover": {
-        "angolo_di_incidenza_deg": 36.85,
+        "angolo_di_incidenza_deg": 36.84,
         "angolo_di_vista_off_nadir_deg": 32.74,
-        "soglia_layover_deg": 36.85,
-        "soglia_ombra_deg": 53.15,
+        "soglia_layover_deg": 36.84,
+        "soglia_ombra_deg": 53.16,
         "piramidi": [
           {
             "piramide": "Cheope (Khufu)",
             "pendenza_faccia_deg": 51.84,
-            "incidenza_locale_faccia_vicina_deg": -14.99,
-            "incidenza_locale_faccia_lontana_deg": 88.69,
+            "incidenza_locale_faccia_vicina_deg": -15.0,
+            "incidenza_locale_faccia_lontana_deg": 88.68,
             "faccia_vicina": "layover",
             "faccia_lontana": "illuminata",
             "estensione_slant_faccia_vicina_m": 41.8,
@@ -392,8 +735,8 @@
           {
             "piramide": "Chefren (Khafre)",
             "pendenza_faccia_deg": 53.13,
-            "incidenza_locale_faccia_vicina_deg": -16.28,
-            "incidenza_locale_faccia_lontana_deg": 89.98,
+            "incidenza_locale_faccia_vicina_deg": -16.29,
+            "incidenza_locale_faccia_lontana_deg": 89.97,
             "faccia_vicina": "layover",
             "faccia_lontana": "illuminata",
             "estensione_slant_faccia_vicina_m": 44.6,
@@ -402,8 +745,8 @@
           {
             "piramide": "Micerino (Menkaure)",
             "pendenza_faccia_deg": 51.34,
-            "incidenza_locale_faccia_vicina_deg": -14.49,
-            "incidenza_locale_faccia_lontana_deg": 88.19,
+            "incidenza_locale_faccia_vicina_deg": -14.5,
+            "incidenza_locale_faccia_lontana_deg": 88.18,
             "faccia_vicina": "layover",
             "faccia_lontana": "illuminata",
             "estensione_slant_faccia_vicina_m": 18.2,
@@ -413,91 +756,91 @@
         "nota": "Tutte e tre le facce rivolte al sensore superano l'angolo di incidenza: sono in layover pieno, e le facce opposte sono in ombra. E' geometria, non un artefatto del processing. Le fonti raccomandano di preferire il lato in layover: comprime piu' diffusori nella stessa cella di range ma li separa lungo l'asse di elevazione, che e' esattamente l'asse ricostruito qui."
       },
       "separabilita_piramide_vs_piana": {
-        "delta_quota_mediana_m": -1.7,
-        "errore_standard_m": 5.94,
-        "z_score": -0.3,
-        "pixel_su_piramide": 175,
-        "pixel_su_piana": 1622
+        "delta_quota_mediana_m": 2.9,
+        "errore_standard_m": 15.62,
+        "z_score": 0.2,
+        "pixel_su_piramide": 108,
+        "pixel_su_piana": 1801
       },
-      "avvertenza_interna": "delta_z verticale 242 m contro 138 m di altezza: la piramide occupa 0.57 celle di RISOLUZIONE. Nessuna struttura interna e' separabile con questi dati. Le camere note (Grande Galleria, camera del Re, camera della Regina) hanno dimensioni di alcuni metri, due ordini di grandezza sotto."
+      "avvertenza_interna": "delta_z verticale 144 m contro 138 m di altezza: la piramide occupa 0.96 celle di RISOLUZIONE. Nessuna struttura interna e' separabile con questi dati. Le camere note (Grande Galleria, camera del Re, camera della Regina) hanno dimensioni di alcuni metri, due ordini di grandezza sotto."
     },
     "calibrazione_segno_k_z": {
       "segno_+1": {
-        "quota_mediana_piramidi_m": 0.13,
-        "quota_mediana_piana_m": -0.29,
-        "margine_m": 0.42,
-        "pixel_su_piramide": 83,
-        "pixel_su_piana": 3228
+        "quota_mediana_piramidi_m": -5.94,
+        "quota_mediana_piana_m": -1.54,
+        "margine_m": -4.4,
+        "pixel_su_piramide": 60,
+        "pixel_su_piana": 3288
       },
       "segno_-1": {
-        "quota_mediana_piramidi_m": -0.13,
-        "quota_mediana_piana_m": 0.29,
-        "margine_m": -0.42,
-        "pixel_su_piramide": 83,
-        "pixel_su_piana": 3228
+        "quota_mediana_piramidi_m": 5.94,
+        "quota_mediana_piana_m": 1.54,
+        "margine_m": 4.4,
+        "pixel_su_piramide": 60,
+        "pixel_su_piana": 3288
       },
-      "segno_scelto": 1,
+      "segno_scelto": -1,
       "criterio": "le piramidi devono risultare sopra la piana; si sceglie il segno che massimizza la mediana(quota sulle impronte) - mediana(quota sulla piana)",
-      "margine_scelto_m": 0.42
+      "margine_scelto_m": 4.4
     }
   },
   "analisi_colonne": {
     "Cheope (Khufu)": {
-      "pixel_nella_colonna": 274,
-      "intensita_media_dB": -6.94,
-      "solidita_media": 0.1132,
-      "solidita_max": 0.1913,
+      "pixel_nella_colonna": 277,
+      "intensita_media_dB": -4.43,
+      "solidita_media": 0.0871,
+      "solidita_max": 0.1068,
       "quota_del_massimo_m": 3.1
     },
     "Chefren (Khafre)": {
       "pixel_nella_colonna": 239,
-      "intensita_media_dB": -7.49,
-      "solidita_media": 0.15,
-      "solidita_max": 0.3145,
-      "quota_del_massimo_m": -3.1
+      "intensita_media_dB": -7.38,
+      "solidita_media": 0.083,
+      "solidita_max": 0.1334,
+      "quota_del_massimo_m": 3.1
     },
     "Micerino (Menkaure)": {
-      "pixel_nella_colonna": 55,
-      "intensita_media_dB": -14.16,
-      "solidita_media": 0.0266,
-      "solidita_max": 0.0452,
-      "quota_del_massimo_m": 0.0
+      "pixel_nella_colonna": 54,
+      "intensita_media_dB": -11.84,
+      "solidita_media": 0.0293,
+      "solidita_max": 0.0468,
+      "quota_del_massimo_m": 6.2
     },
     "deserto_controllo": {
-      "pixel_nella_colonna": 96,
+      "pixel_nella_colonna": 99,
       "posizione_enu_m": [
-        394.5,
-        -811.7
+        394.0,
+        -814.9
       ],
-      "intensita_media_dB": -6.13,
-      "solidita_media": 0.1697
+      "intensita_media_dB": -3.98,
+      "solidita_media": 0.1772
     },
     "separabilita_vs_deserto": {
       "Cheope (Khufu)": {
-        "delta_intensita_dB": -0.81,
-        "delta_solidita": -0.0565
+        "delta_intensita_dB": -0.45,
+        "delta_solidita": -0.0901
       },
       "Chefren (Khafre)": {
-        "delta_intensita_dB": -1.36,
-        "delta_solidita": -0.0197
+        "delta_intensita_dB": -3.4,
+        "delta_solidita": -0.0942
       },
       "Micerino (Menkaure)": {
-        "delta_intensita_dB": -8.03,
-        "delta_solidita": -0.1431
+        "delta_intensita_dB": -7.86,
+        "delta_solidita": -0.1479
       }
     }
   },
   "geolocation_grid_xml": {
     "descrizione": "F35/F36: i nodi VERI (non interpolati) della geolocation grid dello .xml. Non sono un piano: coprono tutta la scena con un rilievo reale fino a centinaia di metri. height_ref/xml_ref sono ora la bilineare LOCALE (F36) fra i quattro nodi reali della cella che contiene il ritaglio -- non una spline globale sui 231 nodi -- ma la spaziatura del reticolo e' enormemente piu' larga del ritaglio delle piramidi, quindi quella cella non ha rilievo locale da mostrare, e il risultato e' correttamente quasi piatto: e' un limite di risoluzione del riferimento, non un errore di calcolo.",
     "spaziatura_reticolo_px": [
-      1507,
-      1299
+      1511,
+      1351
     ],
-    "nodo_piu_vicino_al_ritaglio_km": 2.61,
+    "nodo_piu_vicino_al_ritaglio_km": 2.97,
     "nodo_piu_vicino_al_ritaglio_quota_m": 64.0,
     "rilievo_vero_su_tutta_la_scena_m": [
-      6.0,
-      715.0
+      1.0,
+      610.0
     ]
   },
   "correzioni_applicate": [
@@ -695,7 +1038,32 @@
       "id": "F39",
       "gravita": "richiesta",
       "descrizione": "Il 'suolo (DEM)' di F38 non seguiva il profilo delle piramidi e non era sul datum dei dati. Tre difetti, tutti verificati sui dati. (a) Il DEM esterno le piramidi non le contiene: interrogando l'API di elevazione esattamente sui tre apici noti restituisce 66 / 76 / 78 m, cioe' il plateau nudo -- l'apice di Cheope, che sta a ~198 m, usciva 130 m piu' in basso e il 'suolo' passava DENTRO le piramidi invece di seguirne le facce. Non era il passo del reticolo: anche interrogando il singolo punto dell'apice il valore resta 66 m. (b) Il livello veniva da un dataset con un datum verticale suo: 68.6 m di mediana sul ritaglio e 75.5 m sotto Cheope, contro i 63.1..64.2 m delle quote .xml, cioe' fino a ~12 m di scarto rispetto alla superficie misurata, che poggia sul datum .xml. (c) Se lo scaricamento falliva il layer spariva del tutto. Ora ground_dem_suolo() lo costruisce in tre pezzi dichiarati: DATUM = le quote lette dai file di stack_slc (<geolocationGridPoint><height> degli annotation.xml, bilineare locale del master, F36), lette da TUTTE le date come controllo di consistenza (plateau_heights_from_stack(): 11 date VH IW2, tutte 64.0 m sul nodo grezzo piu' vicino, che cade a 2.2-3.2 km); RILIEVO = il DEM esterno riportato su quel datum togliendo il suo scarto mediano sull'impronta delle piramidi, e senza rete resta la bilineare .xml, cosi' il layer c'e' comunque; PIRAMIDI = pyramid_profile_enu(), z = base + altezza * (1 - max(|dx|,|dy|)/semilato) sul reticolo ENU, con la base presa dal terreno sotto ciascuna impronta (non dal base_alt_m di letteratura) perche' il layer sia continuo con il terreno intorno, composto con np.maximum. Corretto anche il reticolo di query: l'API accetta 100 coordinate per richiesta e prima se ne mandava una sola, quindi il reticolo era bloccato a 10x10 (~170 m di passo); ora la richiesta e' spezzata in blocchi e cfg.dem_grid vale 24 (~70 m). Interruttori: cfg.suolo_dem (il layer), cfg.fetch_dem (il rilievo esterno), cfg.dem_pyramids (il profilo delle piramidi)."
+    },
+    {
+      "id": "F41",
+      "gravita": "richiesta",
+      "descrizione": "La nuvola di voxel mette il 46.4% dei punti SOPRA la superficie e il 23.4% sopra l'apice di Cheope, e la pagina non diceva perche'. Non e' un difetto del disegno, sono due fatti sovrapposti. (1) L'asse z e' un intervallo di RICERCA simmetrico attorno al datum (+-elev_max = 400 m): meta' sta in aria per costruzione e nulla nell'inversione obbliga la soluzione a stare sottoterra. (2) Dove finisce l'energia lo decide la PSF verticale della pila, e con 8 baseline quella PSF non discrimina. Misurato sul ritaglio delle piramidi da vertical_lobe_profile(): picco a -12.5 m, cioe' sulla superficie, corretto; lobo principale a -3 dB largo 150 m (da -87.5 a +62.5 m); ma il LOBO LATERALE PEGGIORE sta a -1.16 dB, poco piu' di un dB sotto il picco, e ai bordi dell'asse la curva vale ancora -1.9 / -2.7 dB, per 5.07 dB di contrasto su tutti gli 800 m dell'asse. Un picco che i suoi lobi quasi eguagliano non localizza nulla in profondita'. Aggravante di resa: l'asse e' campionato a 3.125 m, 91 volte piu' fitto della delta_z di Rayleigh (283.5 m), quindi la nuvola sembra dettagliata per sovracampionamento. build_html disegna ora quel profilo nel pannello 'Lobi verticali' accanto ai comandi dei voxel, con la riga dei -3 dB, la barra di delta_z in scala e le due frazioni di voxel sopra il suolo. La nuvola NON viene ritagliata a z<=0: nasconderne meta' darebbe un'immagine piu' credibile e piu' falsa. La correzione vera e' piu' baseline, non un filtro sul disegno."
+    },
+    {
+      "id": "F42",
+      "gravita": "critico",
+      "descrizione": "Ogni data veniva LETTA alla stessa finestra assoluta del master e riallineata dopo con apply_shift(), che e' una traslazione CIRCOLARE via rampa di fase. Vale per frazioni di pixel, non per l'inquadramento del prodotto: sulla stessa traccia relativa 58 il bersaglio di Giza cade a -4510 linee nei prodotti S1A e a +30 nei S1D rispetto al master S1C, e fino a -108 pixel in range. Con 89 linee di ritaglio, per 16 date su 28 lo 'slave' era un pezzo di deserto a 63 km di distanza, ripiegato su se stesso dalla traslazione circolare e per giunta dirampato con i parametri del burst sbagliato: interferogrammi di puro rumore, e la pila multi-missione (che e' esattamente cio' che allarga l'escursione di baseline da 163 a 273 m) non era utilizzabile. Anche restando su una sola missione l'offset in range di alcune decine di pixel faceva avvolgere una colonna su otto del ritaglio. Ora l'offset INTERO entra nella finestra di lettura e nell'indice di burst passato al deramping TOPS; alla rampa di fase resta il solo residuo sub-pixel. Se il ritaglio spostato scavalcherebbe il bordo del burst o del prodotto la data viene scartata e detta a voce alta, perche' il deramping TOPS non e' definito a cavallo di due burst."
+    },
+    {
+      "id": "F43",
+      "gravita": "alto",
+      "descrizione": "_omogenea() separava le acquisizioni per il solo verso di passaggio. Due tracce ascendenti DIVERSE sono incompatibili quanto un'ascendente e una discendente: guardano lo stesso punto da posizioni orbitali distanti centinaia di chilometri, quindi baseline fuori scala e coerenza nulla. Il criterio ora e' verso + orbita relativa, letta dal manifest.safe accanto all'annotation (con ricaduta sul solo verso nel layout piatto, dove il manifest non c'e')."
+    },
+    {
+      "id": "F44",
+      "gravita": "medio",
+      "descrizione": "Il default di --gamma-min era 0.35, cioe' proprio la costante che F22 aveva tolto, e main() lo passava sempre alla Config (che ha default 0.0). Restava innocuo solo perche' la soglia calibrata sul nullo e' piu' alta di 0.35 con le pile finora usate; con una pila abbastanza numerosa la soglia nulla scende e il pavimento tornerebbe a decidere lui. Il default e' ora 0.0, coerente con Config."
+    },
+    {
+      "id": "F45",
+      "gravita": "medio",
+      "descrizione": "ground_dem_suolo() usava `m_lat` nella riga di resoconto del reticolo DEM, ma in quello scope il nome non esiste: NameError. Il ramo scatta solo al PRIMO scaricamento riuscito (nessuna cache .npz) e con verbose, quindi bastava avere gia' il file per non vederlo mai. Ora usa la costante M_PER_GRADO_LAT. Trovato con mypy, non a occhio."
     }
   ],
-  "avvertenza": "La superficie e' una misura: quota di riferimento dallo .xml piu' quota del diffusore dominante stimata dai .tiff. La sua precisione e' ~16 m. La RISOLUZIONE verticale e' 242 m: nessuna struttura interna e' separabile. L'indice di solidita' e' un discriminante multi-attributo, non una rilevazione di cavita'."
+  "avvertenza": "La superficie e' una misura: quota di riferimento dallo .xml piu' quota del diffusore dominante stimata dai .tiff. La sua precisione e' ~14 m. La RISOLUZIONE verticale e' 144 m: nessuna struttura interna e' separabile. L'indice di solidita' e' un discriminante multi-attributo, non una rilevazione di cavita'."
 }

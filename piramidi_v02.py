@@ -14,9 +14,20 @@ Dati usati
 
 Che cosa e' cambiato
 --------------------
-Le 39 correzioni sono elencate in ``FIXES`` e stampate da ``--fixes``. Le
-sei piu' pesanti:
+Le correzioni sono elencate in ``FIXES`` e stampate da ``--fixes``. Le
+sette piu' pesanti:
 
+* **F42** -- ogni data veniva LETTA alla stessa finestra assoluta del master e
+  riallineata dopo con ``apply_shift()``, che trasla in modo CIRCOLARE. Ma
+  l'inquadramento del prodotto cambia da una missione all'altra: sulla stessa
+  traccia relativa 58, il bersaglio di Giza cade 4510 linee piu' indietro nei
+  prodotti S1A che nei S1C. Con un ritaglio di 89 linee, quello "slave" era
+  deserto a 63 km di distanza, ripiegato su se stesso e dirampato con i
+  parametri del burst sbagliato: 16 date su 28 erano rumore, e la pila
+  multi-missione -- proprio quella che porta l'escursione di baseline da 163 a
+  273 m -- non era utilizzabile. Ora l'offset intero entra nella finestra di
+  lettura e nell'indice di burst; alla rampa di fase resta il residuo
+  sub-pixel.
 * **F01/F02** -- il cubo conteneva SLC grezze e la fase di terra piatta veniva
   tolta con una regressione su ``np.unwrap`` applicato a uno scatter mascherato
   e appiattito. Su dati decorrelati quell'unwrap e' un random walk: iniettava
@@ -535,6 +546,46 @@ FIXES: Tuple[Tuple[str, str, str], ...] = (
      "NON viene ritagliata a z<=0: nasconderne meta' darebbe un'immagine "
      "piu' credibile e piu' falsa. La correzione vera e' piu' baseline, non "
      "un filtro sul disegno."),
+    ("F42", "critico",
+     "Ogni data veniva LETTA alla stessa finestra assoluta del master e "
+     "riallineata dopo con apply_shift(), che e' una traslazione CIRCOLARE via "
+     "rampa di fase. Vale per frazioni di pixel, non per l'inquadramento del "
+     "prodotto: sulla stessa traccia relativa 58 il bersaglio di Giza cade a "
+     "-4510 linee nei prodotti S1A e a +30 nei S1D rispetto al master S1C, e "
+     "fino a -108 pixel in range. Con 89 linee di ritaglio, per 16 date su 28 "
+     "lo 'slave' era un pezzo di deserto a 63 km di distanza, ripiegato su se "
+     "stesso dalla traslazione circolare e per giunta dirampato con i "
+     "parametri del burst sbagliato: interferogrammi di puro rumore, e la "
+     "pila multi-missione (che e' esattamente cio' che allarga l'escursione "
+     "di baseline da 163 a 273 m) non era utilizzabile. Anche restando su una "
+     "sola missione l'offset in range di alcune decine di pixel faceva "
+     "avvolgere una colonna su otto del ritaglio. Ora l'offset INTERO entra "
+     "nella finestra di lettura e nell'indice di burst passato al deramping "
+     "TOPS; alla rampa di fase resta il solo residuo sub-pixel. Se il "
+     "ritaglio spostato scavalcherebbe il bordo del burst o del prodotto la "
+     "data viene scartata e detta a voce alta, perche' il deramping TOPS non "
+     "e' definito a cavallo di due burst."),
+    ("F43", "alto",
+     "_omogenea() separava le acquisizioni per il solo verso di passaggio. "
+     "Due tracce ascendenti DIVERSE sono incompatibili quanto un'ascendente e "
+     "una discendente: guardano lo stesso punto da posizioni orbitali "
+     "distanti centinaia di chilometri, quindi baseline fuori scala e "
+     "coerenza nulla. Il criterio ora e' verso + orbita relativa, letta dal "
+     "manifest.safe accanto all'annotation (con ricaduta sul solo verso nel "
+     "layout piatto, dove il manifest non c'e')."),
+    ("F44", "medio",
+     "Il default di --gamma-min era 0.35, cioe' proprio la costante che F22 "
+     "aveva tolto, e main() lo passava sempre alla Config (che ha default "
+     "0.0). Restava innocuo solo perche' la soglia calibrata sul nullo e' piu' "
+     "alta di 0.35 con le pile finora usate; con una pila abbastanza numerosa "
+     "la soglia nulla scende e il pavimento tornerebbe a decidere lui. Il "
+     "default e' ora 0.0, coerente con Config."),
+    ("F45", "medio",
+     "ground_dem_suolo() usava `m_lat` nella riga di resoconto del reticolo "
+     "DEM, ma in quello scope il nome non esiste: NameError. Il ramo scatta "
+     "solo al PRIMO scaricamento riuscito (nessuna cache .npz) e con verbose, "
+     "quindi bastava avere gia' il file per non vederlo mai. Ora usa la "
+     "costante M_PER_GRADO_LAT. Trovato con mypy, non a occhio."),
 )
 
 
@@ -1509,6 +1560,65 @@ def build_interf_cube(
     win, burst = target_window(ann_m, geo_m, cfg)
     n_l, n_p = win.n_l, win.n_p
 
+    # --- F42: finestra dello slave presa dove il bersaglio sta DAVVERO -----
+    # Ogni prodotto ha il proprio inquadramento lungo l'orbita. Sulla stessa
+    # traccia relativa, il bersaglio cade a linee molto diverse a seconda della
+    # missione: fra S1C e S1A su Giza la differenza misurata e' di ~4510 linee
+    # (63 km di volo) e fino a un centinaio di pixel in range. La versione
+    # precedente leggeva TUTTE le date alla stessa finestra assoluta del master
+    # e correggeva dopo con apply_shift(), che e' una traslazione CIRCOLARE via
+    # rampa di fase: valida per frazioni di pixel, non per migliaia di linee.
+    # Con un offset del genere lo slave era un pezzo di deserto a 63 km di
+    # distanza, ripiegato su se stesso, e per giunta dirampato con i parametri
+    # del burst sbagliato. L'offset intero ora entra nella finestra di
+    # lettura (e nell'indice di burst dello slave, che il deramping TOPS usa);
+    # alla rampa di fase resta solo il residuo sub-pixel.
+    l_m, p_m = geo_m.latlon_to_line_pixel(PYRAMIDS[0].lat, PYRAMIDS[0].lon)
+    finestre: List[Tuple[ChipWindow, int, complex]] = []
+    tenute: List[int] = []
+    fuori: List[str] = []
+    for i in range(len(entries)):
+        if i == mi:
+            finestre.append((win, burst, 0j))
+            tenute.append(i)
+            continue
+        l_s, p_s = geos[i].latlon_to_line_pixel(PYRAMIDS[0].lat, PYRAMIDS[0].lon)
+        d_l, d_p = l_s - l_m, p_s - p_m
+        off_l, off_p = int(round(d_l)), int(round(d_p))
+        w_s = ChipWindow(win.l0 + off_l, win.l1 + off_l,
+                         win.p0 + off_p, win.p1 + off_p)
+        b_s = anns[i].burst_of_line(0.5 * (w_s.l0 + w_s.l1))
+        b_first = b_s * anns[i].lines_per_burst
+        b_last = b_first + anns[i].lines_per_burst - 1
+        if (w_s.l0 < b_first or w_s.l1 > b_last
+                or w_s.p0 < 0 or w_s.p1 > anns[i].n_samples - 1):
+            # il ritaglio scavalcherebbe il bordo del burst o del prodotto:
+            # il deramping TOPS non e' definito a cavallo di due burst.
+            fuori.append(f"{entries[i].date} (offset {off_l:+d} linee, "
+                         f"{off_p:+d} pixel)")
+            continue
+        finestre.append((w_s, b_s, complex(d_l - off_l, d_p - off_p)))
+        tenute.append(i)
+
+    if len(tenute) < len(entries):
+        if verbose:
+            print(f"  F42: {len(entries) - len(tenute)} acquisizioni scartate, il "
+                  f"ritaglio cade fuori dal burst: " + ", ".join(fuori))
+        entries = [entries[i] for i in tenute]
+        anns = [anns[i] for i in tenute]
+        orbits = [orbits[i] for i in tenute]
+        geos = [geos[i] for i in tenute]
+        mi = tenute.index(mi)
+        ann_m, orb_m, geo_m = anns[mi], orbits[mi], geos[mi]
+        baselines = compute_baselines(
+            list(zip([e.date for e in entries], orbits)), tgt0, mi)
+    if verbose:
+        dl_max = max(abs(w.l0 - win.l0) for w, _b, _s in finestre)
+        dp_max = max(abs(w.p0 - win.p0) for w, _b, _s in finestre)
+        print(f"  F42: ritaglio riposizionato per data (offset massimo "
+              f"{dl_max} linee, {dp_max} pixel); alla rampa di fase resta "
+              f"solo il residuo sub-pixel")
+
     # Rete di sicurezza sulla baseline critica: oltre di essa lo spostamento
     # spettrale in range supera l'intera banda del chirp e fra le due
     # acquisizioni non resta nessuna frequenza in comune. La coerenza e' zero
@@ -1573,21 +1683,20 @@ def build_interf_cube(
     k_z = np.zeros((len(entries), n_l, n_p), dtype=np.float32)
     coreg: List[Dict[str, Any]] = []
 
-    l_m, p_m = geo_m.latlon_to_line_pixel(PYRAMIDS[0].lat, PYRAMIDS[0].lon)
-    rel_l_m, rel_p_m = l_m - win.l0, p_m - win.p0
-
     for i, entry in enumerate(entries):
         ann, orb, geo = anns[i], orbits[i], geos[i]
+        win_i, burst_i, geo_shift = finestre[i]
 
         if i == mi:
             img = img_m
             shift, src, psr = 0j, "master", float("inf")
         else:
-            chip = read_window(entry, win, burst, calibra=calibra)
+            # F42: la finestra e' gia' quella dello slave, quindi il chip
+            # contiene lo stesso pezzo di terreno del master e il residuo da
+            # correggere e' sub-pixel.
+            chip = read_window(entry, win_i, burst_i, calibra=calibra)
             img = tops_deramp(chip, ann)
 
-            l_s, p_s = geo.latlon_to_line_pixel(PYRAMIDS[0].lat, PYRAMIDS[0].lon)
-            geo_shift = complex((l_s - win.l0) - rel_l_m, (p_s - win.p0) - rel_p_m)
             corr_shift, psr = estimate_shift(img_m, img)
             if abs(corr_shift - geo_shift) <= 2.0 and psr >= 8.0:
                 shift, src = corr_shift, "corr"
@@ -1614,13 +1723,17 @@ def build_interf_cube(
             "b_perp_m": round(baselines[i].b_perp, 2),
             "b_temp_giorni": round(baselines[i].b_temp, 1),
             "shift_px": [round(shift.real, 3), round(shift.imag, 3)],
+            "offset_finestra_px": [win_i.l0 - win.l0, win_i.p0 - win.p0],
+            "burst": burst_i,
             "sorgente_shift": src,
             "psr": None if math.isinf(psr) else round(psr, 2),
         })
         if verbose:
             print(f"    [{entry.date}] B_perp={baselines[i].b_perp:+8.2f} m  "
                   f"dt={baselines[i].b_temp:+6.0f} d  "
-                  f"shift=({shift.real:+7.3f},{shift.imag:+7.3f}) px [{src}]"
+                  f"finestra=({win_i.l0 - win.l0:+6d},{win_i.p0 - win.p0:+5d}) px "
+                  f"burst {burst_i}  "
+                  f"residuo=({shift.real:+6.3f},{shift.imag:+6.3f}) px [{src}]"
                   + ("" if math.isinf(psr) else f"  PSR={psr:5.1f}"))
 
     cube = InterfCube(
@@ -2423,7 +2536,9 @@ def plateau_heights_from_stack(cfg: Config, geo: Geocoder,
     # scostamento e' misurato da CIASCUNA piramide, quindi i due riferimenti
     # non coincidono e la sostituzione cambierebbe il risultato.
     m_lon = M_PER_GRADO_LON_EQ * math.cos(math.radians(PYRAMIDS[0].lat))
-    for entry in discover_stack(cfg):
+    # verbose=False: l'avviso sulle tracce (F43) l'ha gia' dato run(); qui si
+    # rileggono soltanto le quote dei nodi.
+    for entry in discover_stack(cfg, verbose=False):
         try:
             root = ET.parse(entry.annotation).getroot()
             gp = root.findall(".//geolocationGrid//geolocationGridPoint")
@@ -2642,7 +2757,11 @@ def ground_dem_suolo(lat0: float, lon0: float, east: np.ndarray, north: np.ndarr
                 np.savez_compressed(cache, z0=terr, shape=np.array(east.shape),
                                     bbox=bbox, gc=np.array(int(gc)))
                 if verbose:
-                    step_m = (latN - latS) * m_lat / max(gc - 1, 1)
+                    # F45: era `m_lat`, che in questo scope non esiste. Il
+                    # ramo scatta solo al primo scaricamento riuscito (senza
+                    # cache) e con verbose: bastava avere gia' il .npz per non
+                    # vederlo mai, ma li' e' un NameError, non un numero storto.
+                    step_m = (latN - latS) * M_PER_GRADO_LAT / max(gc - 1, 1)
                     print(f"      [DEM] rilievo esterno (Copernicus via Open-Meteo): "
                           f"{terr.min():.0f}..{terr.max():.0f} m su reticolo "
                           f"{gc}x{gc}, passo ~{step_m:.0f} m")
@@ -2978,6 +3097,30 @@ def _passo_orbitale(annotation: str) -> str:
     return (t or "?").strip()
 
 
+def _traccia(annotation: str) -> str:
+    """F43 -- traccia di appartenenza: verso di passaggio PIU' orbita relativa.
+
+    Il verso da solo non basta. Due tracce ascendenti diverse guardano lo
+    stesso punto da posizioni orbitali distanti centinaia di chilometri: la
+    baseline ortogonale e' fuori scala esattamente come fra ascendente e
+    discendente, e la coerenza e' zero. Il numero di orbita relativa non sta
+    nell'annotation ma nel manifest.safe che gli sta accanto nell'albero
+    .SAFE; se non c'e' (layout piatto) si ricade sul solo verso, che e' quanto
+    faceva la versione precedente."""
+    passo = _passo_orbitale(annotation)
+    manifest = os.path.join(os.path.dirname(os.path.dirname(annotation)),
+                            "manifest.safe")
+    if not os.path.exists(manifest):
+        return passo
+    try:
+        with open(manifest, "r", encoding="utf-8", errors="replace") as fh:
+            testo = fh.read()
+    except OSError:                                     # pragma: no cover
+        return passo
+    m = re.search(r"relativeOrbitNumber[^>]*>\s*(\d+)\s*<", testo)
+    return f"{passo}/traccia {m.group(1)}" if m else passo
+
+
 def _omogenea(entries: List[StackEntry], verbose: bool = True) -> List[StackEntry]:
     """Tiene solo le acquisizioni geometricamente compatibili fra loro.
 
@@ -2985,13 +3128,15 @@ def _omogenea(entries: List[StackEntry], verbose: bool = True) -> List[StackEntr
     discendente guardano lo stesso punto da lati opposti dell'orbita, e la
     loro baseline ortogonale vale centinaia di chilometri -- cinque ordini di
     grandezza oltre la baseline critica, quindi coerenza esattamente zero.
+    F43: il criterio e' verso di passaggio PIU' orbita relativa, perche' due
+    tracce dello stesso verso sono incompatibili quanto due versi diversi.
     Mescolarle non degrada il risultato, lo distrugge. Si tiene il gruppo piu'
     numeroso e si dice a voce alta cosa e' stato scartato."""
     if len(entries) < 2:
         return entries
     gruppi: Dict[str, List[StackEntry]] = {}
     for e in entries:
-        gruppi.setdefault(_passo_orbitale(e.annotation), []).append(e)
+        gruppi.setdefault(_traccia(e.annotation), []).append(e)
     if len(gruppi) == 1:
         return entries
     tenuto = max(gruppi, key=lambda k: len(gruppi[k]))
@@ -5372,6 +5517,32 @@ def selftest() -> int:
           f"err={corner_err:.3e} m", end="  ")
     ok &= _esito(e_apex <= 1e-6 and corner_err <= 1e-6)
 
+    # 7) F42: la finestra dello slave va PRESA all'offset, non traslata dopo.
+    #    apply_shift() e' circolare: chiedergli l'inquadramento del prodotto
+    #    (migliaia di linee) non riallinea nulla, ripiega il ritaglio su se
+    #    stesso. Qui il "prodotto" e' sintetico e l'offset e' noto: la lettura
+    #    all'offset deve ricostruire il master, la traslazione circolare no.
+    n_r, n_c, off = 400, 48, -240
+    y_g = np.arange(n_r)[:, None]
+    x_g = np.arange(n_c)[None, :]
+    prod_m = np.exp(-((y_g - 300.0) ** 2) / 50.0
+                    - ((x_g - 24.0) ** 2) / 50.0).astype(np.complex64)
+    prod_s = np.roll(prod_m, off, axis=0)          # stesso terreno, altro frame
+    w0, w1 = 290, 310
+    chip_m = prod_m[w0:w1 + 1]
+
+    def _corr(a: np.ndarray) -> float:
+        u = (a - a.mean()).ravel()
+        v = (chip_m - chip_m.mean()).ravel()
+        d = np.linalg.norm(u) * np.linalg.norm(v)
+        return float(abs(np.vdot(v, u)) / d) if d > 0 else 0.0
+
+    c_vecchio = _corr(apply_shift(prod_s[w0:w1 + 1], complex(-off, 0.0)))
+    c_nuovo = _corr(prod_s[w0 + off:w1 + off + 1])
+    print(f"  F42: finestra all'offset r={c_nuovo:.3f}  vs  "
+          f"traslazione circolare r={c_vecchio:.3f}", end="  ")
+    ok &= _esito(c_nuovo > 0.999 and c_vecchio < 0.1)
+
     print("\n  " + ("TUTTI GLI AUTOTEST SUPERATI" if ok else "AUTOTEST FALLITI"))
     return 0 if ok else 1
 
@@ -5400,7 +5571,10 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("--mm-lines", type=int, default=1024)
     ap.add_argument("--look-range", type=int, default=4)
     ap.add_argument("--look-azimuth", type=int, default=1)
-    ap.add_argument("--gamma-min", type=float, default=0.35)
+    ap.add_argument("--gamma-min", type=float, default=0.0,
+                    help="F44: pavimento AGGIUNTIVO sotto la soglia calibrata "
+                         "sul nullo (F22). Va lasciato a 0: la soglia la "
+                         "decide la distribuzione nulla, non una costante")
     ap.add_argument("--margin", dest="area_margin_m", type=float, default=150.0,
                     help="margine [m] attorno alle piramidi in geometria radar (F28)")
     ap.add_argument("--full-scene", action="store_true",
