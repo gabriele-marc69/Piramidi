@@ -512,6 +512,29 @@ FIXES: Tuple[Tuple[str, str, str], ...] = (
      "la richiesta e' spezzata in blocchi e cfg.dem_grid vale 24 (~70 m). "
      "Interruttori: cfg.suolo_dem (il layer), cfg.fetch_dem (il rilievo "
      "esterno), cfg.dem_pyramids (il profilo delle piramidi)."),
+    ("F41", "richiesta",
+     "La nuvola di voxel mette il 46.4% dei punti SOPRA la superficie e il "
+     "23.4% sopra l'apice di Cheope, e la pagina non diceva perche'. Non e' "
+     "un difetto del disegno, sono due fatti sovrapposti. (1) L'asse z e' un "
+     "intervallo di RICERCA simmetrico attorno al datum (+-elev_max = 400 m): "
+     "meta' sta in aria per costruzione e nulla nell'inversione obbliga la "
+     "soluzione a stare sottoterra. (2) Dove finisce l'energia lo decide la "
+     "PSF verticale della pila, e con 8 baseline quella PSF non discrimina. "
+     "Misurato sul ritaglio delle piramidi da vertical_lobe_profile(): picco "
+     "a -12.5 m, cioe' sulla superficie, corretto; lobo principale a -3 dB "
+     "largo 150 m (da -87.5 a +62.5 m); ma il LOBO LATERALE PEGGIORE sta a "
+     "-1.16 dB, poco piu' di un dB sotto il picco, e ai bordi dell'asse la "
+     "curva vale ancora -1.9 / -2.7 dB, per 5.07 dB di contrasto su tutti gli "
+     "800 m dell'asse. Un picco che i suoi lobi quasi eguagliano non "
+     "localizza nulla in profondita'. Aggravante di resa: l'asse e' "
+     "campionato a 3.125 m, 91 volte piu' fitto della delta_z di Rayleigh "
+     "(283.5 m), quindi la nuvola sembra dettagliata per sovracampionamento. "
+     "build_html disegna ora quel profilo nel pannello 'Lobi verticali' "
+     "accanto ai comandi dei voxel, con la riga dei -3 dB, la barra di "
+     "delta_z in scala e le due frazioni di voxel sopra il suolo. La nuvola "
+     "NON viene ritagliata a z<=0: nasconderne meta' darebbe un'immagine "
+     "piu' credibile e piu' falsa. La correzione vera e' piu' baseline, non "
+     "un filtro sul disegno."),
 )
 
 
@@ -2215,6 +2238,67 @@ def solidity_index(tomo_mag, coherence, mm_energy) -> np.ndarray:
     return (e * c * (1.0 - m)).astype(np.float32)
 
 
+def vertical_lobe_profile(
+    tomo_mag: np.ndarray, z_axis: np.ndarray, pyr_mask: np.ndarray,
+    delta_z_vertical: float,
+) -> Dict[str, Any]:
+    """Profilo medio dell'energia lungo z: la PSF verticale della pila (F41).
+
+    Risponde alla domanda "perche' i voxel stanno anche sopra il suolo". Con
+    poche baseline la cella di Rayleigh verticale e' piu' larga dell'oggetto:
+    la risposta di UN diffusore di superficie si spalma lungo tutto l'asse di
+    ricerca e i lobi laterali finiscono in aria. Questo profilo e' quella
+    risposta, MISURATA sui dati e non argomentata. Se il fascio non scende mai
+    a -3 dB dentro l'asse non esiste un lobo principale separabile, e ogni
+    struttura verticale nella nuvola e' PSF dell'array, non stratigrafia.
+    """
+    z = np.asarray(z_axis, dtype=np.float64)
+    msk = np.asarray(pyr_mask, dtype=bool)
+
+    def _curva(sel: np.ndarray) -> np.ndarray:
+        if not sel.any():
+            return np.full(len(z), -99.0)
+        p = tomo_mag[sel].mean(axis=0).astype(np.float64)
+        return 20.0 * np.log10(np.maximum(p, 1e-12) / max(float(p.max()), 1e-12))
+
+    d_pyr = _curva(msk)
+    d_all = _curva(np.ones(msk.shape, dtype=bool))
+
+    # lobo principale: il tratto CONTIGUO sopra -3 dB che contiene il picco.
+    k_pk = int(np.argmax(d_pyr))
+    lo = hi = k_pk
+    while lo > 0 and d_pyr[lo - 1] >= -3.0:
+        lo -= 1
+    while hi < len(z) - 1 and d_pyr[hi + 1] >= -3.0:
+        hi += 1
+    troncato = bool(lo == 0 or hi == len(z) - 1)
+
+    # lobo laterale peggiore FUORI dal lobo principale; se il lobo principale
+    # arriva ai bordi dell'asse non esiste un "fuori" e il campo resta nullo.
+    fuori = np.ones(len(z), dtype=bool)
+    fuori[lo:hi + 1] = False
+    lobo_lat = float(d_pyr[fuori].max()) if fuori.any() else None
+
+    passo = float(z[1] - z[0]) if len(z) > 1 else 0.0
+    return {
+        "z": np.round(z, 1).tolist(),
+        "pyr": np.round(d_pyr, 2).tolist(),
+        "tutto": np.round(d_all, 2).tolist(),
+        "z_picco": round(float(z[k_pk]), 1),
+        "lobo_lo": round(float(z[lo]), 1),
+        "lobo_hi": round(float(z[hi]), 1),
+        "lobo_larghezza": round(float(z[hi] - z[lo]), 1),
+        "lobo_troncato": troncato,
+        "lobo_laterale_db": None if lobo_lat is None else round(lobo_lat, 2),
+        "contrasto_db": round(float(d_pyr.max() - d_pyr.min()), 2),
+        "bordi_db": [round(float(d_pyr[0]), 2), round(float(d_pyr[-1]), 2)],
+        "passo_z": round(passo, 3),
+        "delta_z": round(float(delta_z_vertical), 1),
+        "sovracamp": (round(float(delta_z_vertical / passo), 0)
+                      if passo > 0 else None),
+    }
+
+
 def local_enu(geo: Geocoder, win: ChipWindow, sl: int, sp: int,
               shape: Tuple[int, int]
               ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, Tuple[float, float]]:
@@ -3761,6 +3845,21 @@ def build_html(res: Dict[str, Any], cfg: Config,
         int(bool(pyr_mask[i, j])),
     ] for m, (i, j, k) in enumerate(zip(ii, jj, kk))]
 
+    # F41: la PSF verticale della pila, cioe' la ragione per cui quella nuvola
+    # ha punti anche sopra il suolo. Va calcolata QUI, dopo la selezione dei
+    # voxel, perche' porta anche la frazione di punti DISEGNATI che sta sopra
+    # il datum: e' il numero che il lettore vede davvero sullo schermo.
+    lobi = vertical_lobe_profile(tomo, z, res["pyr_mask"],
+                                 budget.delta_z_vertical)
+    z_rel = z[kk] if len(kk) else np.zeros(0, dtype=np.float32)
+    lobi["n_voxel"] = int(len(kk))
+    lobi["frac_sopra"] = (round(float(np.mean(z_rel > 0.0)), 4)
+                          if len(z_rel) else 0.0)
+    apice = max(p.height_m for p in PYRAMIDS)
+    lobi["quota_apice"] = round(float(apice), 1)
+    lobi["frac_sopra_apice"] = (round(float(np.mean(z_rel > apice)), 4)
+                                if len(z_rel) else 0.0)
+
     meshes = [pyramid_mesh(p, res["lat0"], res["lon0"]) for p in PYRAMIDS]
 
     hv = np.asarray(surface["h"], dtype=np.float64)
@@ -3834,6 +3933,7 @@ def build_html(res: Dict[str, Any], cfg: Config,
                             round(float(gcp_h_all.max()), 1)],
         "gcp_raw_h_std": round(float(gcp_h_all.std()), 1),
         "voxels": voxels,
+        "lobi": lobi,
         "pyramids": meshes,
         "structures": known_structures(res["lat0"], res["lon0"], verbose=False),
         "mm": {
@@ -3913,6 +4013,10 @@ body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);
 canvas{display:block;width:100%;height:100%;cursor:grab;outline:none}
 canvas:focus-visible{outline:2px solid var(--ring);outline-offset:-2px}
 canvas.drag{cursor:grabbing}
+/* F41: il grafico dei lobi e' un canvas di pannello, non la vista 3D:
+   va sottratto alla regola width/height 100% qui sopra. */
+#psf{width:100%;height:auto;cursor:default;border-radius:6px;
+     background:#0A0F1F;border:1px solid var(--line);margin:2px 0 8px}
 #side{width:340px;flex:0 0 340px;background:var(--panel);
       border-left:1px solid var(--line);padding:18px 18px 40px;
       overflow-y:auto;font-size:12.5px}
@@ -4065,6 +4169,19 @@ td:last-child{text-align:right;color:var(--fg);font-family:var(--mono);font-size
       <label>Colore voxel: pieno/vuoto (con micro-moto)</label>
       <div class="legend" id="lgVox"></div>
       <div class="lbl"><span>vuoto</span><span>pieno</span></div>
+    </div>
+
+    <div class="grp">
+      <div class="gt">Lobi verticali — perché i voxel stanno anche in aria</div>
+      <canvas id="psf" width="304" height="250"
+              aria-label="Profilo verticale dell'energia tomografica in dB"></canvas>
+      <div class="lbl" style="margin-bottom:6px">
+        <span style="color:var(--accent-2)">&#9473; sole piramidi</span>
+        <span style="color:#64748B">&#9473; tutto il ritaglio</span>
+      </div>
+      <table id="pt"></table>
+      <div style="margin-top:6px;color:var(--muted);font-size:11px;line-height:1.5"
+           id="psfnote"></div>
     </div>
 
     <div class="grp">
@@ -4878,6 +4995,147 @@ $('bt').innerHTML =
   '<tr><td>altezza Cheope</td><td>'+b.target_height+' m</td></tr>'+
   '<tr><td>celle sul target</td><td>'+b.cells+'</td></tr>'+
   '<tr><td>segno di k<sub>z</sub></td><td>'+(D.sign>0?'+1':'-1')+'</td></tr>';
+
+/* ---------- profilo dei lobi verticali (F41) -----------------------------
+   Perche' la nuvola tomografica ha punti anche SOPRA il suolo. Due ragioni,
+   e questo grafico mostra la seconda. (1) L'asse z e' un intervallo di
+   RICERCA simmetrico attorno al datum (+-elev_max): nulla nell'inversione
+   obbliga la soluzione a stare sottoterra, meta' dell'asse sta in aria per
+   costruzione. (2) Dove finisce l'energia lo decide la PSF verticale
+   dell'array di baseline, che e' la curva qui sotto: dB in orizzontale (0 =
+   picco), quota relativa al datum in verticale, orientata come nella scena.
+   Se la curva non attraversa mai la riga dei -3 dB non esiste un lobo
+   principale separabile, e ogni struttura verticale nella nuvola e' un lobo
+   dell'array, non stratigrafia. La nuvola NON viene ritagliata a z<=0: sarebbe
+   un'immagine piu' credibile e piu' falsa.                                */
+const LB = D.lobi;
+if(LB && LB.z && LB.z.length){
+  const cvp=$('psf'), g=cvp.getContext('2d');
+  const dp=Math.min(2, window.devicePixelRatio||1);
+  const wCss=Math.max(220, cvp.clientWidth||304), hCss=250;
+  cvp.width=Math.round(wCss*dp); cvp.height=Math.round(hCss*dp);
+  cvp.style.height=hCss+'px';
+  g.setTransform(dp,0,0,dp,0,0);
+  const F='9px ui-monospace,Consolas,monospace';
+  const ML=42, MR=12, MT=14, MB=26;
+  const W=wCss-ML-MR, H=hCss-MT-MB;
+  const NZ=LB.z.length, zmin=LB.z[0], zmax=LB.z[NZ-1];
+  let lo=0;
+  for(let k=0;k<NZ;k++){
+    if(LB.pyr[k]<lo) lo=LB.pyr[k];
+    if(LB.tutto[k]<lo) lo=LB.tutto[k];
+  }
+  lo=Math.min(-4, Math.floor(lo)-1);
+  const X=d=>ML+W*(1-Math.max(lo,Math.min(0,d))/lo);
+  const Y=z=>MT+H*(1-(z-zmin)/(zmax-zmin));
+
+  /* la meta' dell'asse che sta in aria, tinta appena: e' quella la domanda */
+  g.fillStyle='rgba(245,158,11,.07)';
+  g.fillRect(ML, Y(zmax), W, Y(0)-Y(zmax));
+
+  g.font=F; g.strokeStyle='#1E2740'; g.lineWidth=1;
+  g.fillStyle='#94A3B8'; g.textAlign='right'; g.textBaseline='middle';
+  for(const zv of [zmin, zmin/2, 0, zmax/2, zmax]){
+    const y=Y(zv);
+    g.beginPath(); g.moveTo(ML,y); g.lineTo(ML+W,y); g.stroke();
+    g.fillText(zv.toFixed(0), ML-5, y);
+  }
+  g.textAlign='center'; g.textBaseline='top';
+  const passoDb = lo<=-10 ? 4 : 2;
+  for(let d=0; d>=lo; d-=passoDb){
+    const x=X(d);
+    g.beginPath(); g.moveTo(x,MT); g.lineTo(x,MT+H); g.stroke();
+    g.fillText(d.toFixed(0), x, MT+H+5);
+  }
+  g.textAlign='left'; g.fillText('dB', ML+2, MT+H+15);
+  g.textAlign='right'; g.textBaseline='bottom'; g.fillText('m', ML-5, MT-1);
+
+  /* la riga di meta' potenza: il criterio, disegnato invece che raccontato */
+  if(lo < -3){
+    g.save(); g.setLineDash([4,3]); g.strokeStyle='#DC2626'; g.lineWidth=1;
+    const x3=X(-3);
+    g.beginPath(); g.moveTo(x3,MT); g.lineTo(x3,MT+H); g.stroke(); g.restore();
+    g.fillStyle='#F87171'; g.textAlign='left'; g.textBaseline='top';
+    g.fillText('-3 dB', x3+3, MT+2);
+  }
+
+  const curva=(arr,col,lw)=>{
+    g.beginPath();
+    for(let k=0;k<NZ;k++){
+      const x=X(arr[k]), y=Y(LB.z[k]);
+      if(k) g.lineTo(x,y); else g.moveTo(x,y);
+    }
+    g.strokeStyle=col; g.lineWidth=lw; g.lineJoin='round'; g.stroke();
+  };
+  curva(LB.tutto,'#64748B',1);
+  curva(LB.pyr,'#38BDF8',1.8);
+
+  /* il datum: i punti sopra questa riga sono in aria */
+  g.save(); g.setLineDash([3,3]); g.strokeStyle='#F59E0B'; g.lineWidth=1.1;
+  g.beginPath(); g.moveTo(ML,Y(0)); g.lineTo(ML+W,Y(0)); g.stroke(); g.restore();
+  g.fillStyle='#F59E0B'; g.textAlign='right'; g.textBaseline='bottom';
+  g.fillText('superficie', ML+W-3, Y(0)-2);
+
+  /* la cella di Rayleigh, in scala sullo stesso asse: si vede subito che e'
+     piu' larga della piramide che dovrebbe contenere */
+  if(LB.delta_z>0){
+    const zc=LB.z_picco;
+    const z1=Math.max(zmin, zc-LB.delta_z/2), z2=Math.min(zmax, zc+LB.delta_z/2);
+    const xb=ML+10;
+    g.strokeStyle='#F8FAFC'; g.lineWidth=1.2; g.beginPath();
+    g.moveTo(xb,Y(z1)); g.lineTo(xb,Y(z2));
+    g.moveTo(xb-4,Y(z1)); g.lineTo(xb+4,Y(z1));
+    g.moveTo(xb-4,Y(z2)); g.lineTo(xb+4,Y(z2));
+    g.stroke();
+    g.fillStyle='#F8FAFC'; g.textAlign='left'; g.textBaseline='bottom';
+    g.fillText('δz '+LB.delta_z+' m', xb-4, Y(z2)-3);
+  }
+
+  g.fillStyle='#38BDF8';
+  g.beginPath(); g.arc(X(0),Y(LB.z_picco),2.8,0,6.2832); g.fill();
+  g.strokeStyle='#334155'; g.lineWidth=1; g.strokeRect(ML+.5,MT+.5,W,H);
+
+  const pc=v=>(100*v).toFixed(1)+' %';
+  $('pt').innerHTML =
+    '<tr><td>picco del profilo</td><td>'+LB.z_picco+' m</td></tr>'+
+    '<tr><td>contrasto picco/minimo</td><td>'+LB.contrasto_db+' dB</td></tr>'+
+    '<tr><td>livello ai bordi dell\'asse</td><td>'+LB.bordi_db[0]+' / '+
+      LB.bordi_db[1]+' dB</td></tr>'+
+    '<tr><td>larghezza a -3 dB</td><td>'+
+      (LB.lobo_troncato?'&gt; ':'')+LB.lobo_larghezza+' m</td></tr>'+
+    '<tr><td>lobo laterale peggiore</td><td>'+
+      (LB.lobo_laterale_db==null?'nessun fuori-lobo':LB.lobo_laterale_db+' dB')+
+      '</td></tr>'+
+    '<tr><td>&delta;z di Rayleigh</td><td>'+LB.delta_z+' m</td></tr>'+
+    '<tr><td>passo dell\'asse z</td><td>'+LB.passo_z+' m'+
+      (LB.sovracamp?' ('+LB.sovracamp+'&times;)':'')+'</td></tr>'+
+    '<tr><td>voxel disegnati</td><td>'+LB.n_voxel+'</td></tr>'+
+    '<tr><td>di cui sopra la superficie</td><td>'+pc(LB.frac_sopra)+'</td></tr>'+
+    '<tr><td>di cui sopra l\'apice</td><td>'+pc(LB.frac_sopra_apice)+'</td></tr>';
+
+  $('psfnote').innerHTML =
+    (LB.lobo_troncato
+      ? 'Il fascio <b>non scende mai a -3 dB</b> dentro l\'asse: non esiste '+
+        'un lobo principale separabile. '
+      : 'Il lobo principale a -3 dB e\' largo '+LB.lobo_larghezza+' m (da '+
+        LB.lobo_lo+' a '+LB.lobo_hi+' m), ma il <b>lobo laterale peggiore '+
+        'sta a '+LB.lobo_laterale_db+' dB</b>, appena '+
+        Math.abs(LB.lobo_laterale_db).toFixed(1)+' dB sotto il picco: un '+
+        'picco che i suoi lobi quasi eguagliano non localizza niente in '+
+        'profondita\'. ')+
+    'Su tutti gli '+(LB.z[LB.z.length-1]-LB.z[0]).toFixed(0)+' m dell\'asse '+
+    'il contrasto e\' <b>'+LB.contrasto_db+' dB</b>. E\' per questo che il '+
+    pc(LB.frac_sopra)+' dei voxel disegnati finisce sopra il suolo e il '+
+    pc(LB.frac_sopra_apice)+' sopra l\'apice di Cheope: sono lobi dell\'array '+
+    'di baseline, non struttura. La cella di Rayleigh vale &delta;z = '+
+    LB.delta_z+' m contro i '+D.budget.target_height+' m di Cheope, e l\'asse '+
+    'e\' campionato a '+LB.passo_z+' m: la nuvola sembra dettagliata perche\' '+
+    'e\' sovracampionata '+(LB.sovracamp||'?')+' volte, non perche\' contenga '+
+    'quel dettaglio. Non viene ritagliata a z&le;0 di proposito: nasconderne '+
+    'meta\' darebbe un\'immagine piu\' credibile e piu\' falsa. La correzione '+
+    'vera e\' piu\' baseline.';
+}
+
 
 const R=D.regression||{};
 $('rt').innerHTML = ('pendenza' in R)
