@@ -32,6 +32,10 @@ ScanPyramids (Big Void 2017, North Face Corridor 2023) NON sono modellate: non
 hanno una geometria pubblicata con la stessa precisione del rilievo Petrie.
 """
 import math
+from piramide_3d_comune import (riferimenti as _riferimenti,
+                                stampa_riferimenti, guscio_piramide,
+                                disegna_box, disegna_corridoio,
+                                legenda_senza_doppioni)
 
 # ================================================================
 # 1. PIRAMIDE ESTERNA
@@ -180,41 +184,15 @@ GREAT_STEP = (X_OFFSET, GALL_END_Y, GALL_END_Z)
 # ================================================================
 # 6. INGOMBRI (bounding box) PER IL RESTO DELLA PIPELINE
 # ================================================================
-def _bbox(s):
-    """Ingombro di una struttura -> (x_c, y_c, z_c, dx, dy, dz) nel sistema
-    X=Est, Y=Nord, Z=quota sopra la base. Per i corridoi inclinati e' il
-    bounding box del tratto, comprensivo dello spessore della sezione."""
-    if s["tipo"] in ("box", "cuspide"):
-        dz = s.get("dz_colmo", s["dz"])
-        return (s["x"], s["y"], s["z"] + dz / 2.0, s["dx"], s["dy"], dz)
-    if s["tipo"] == "corridoio":
-        y_lo, y_hi = min(s["y0"], s["y1"]), max(s["y0"], s["y1"])
-        z_lo, z_hi = min(s["z0"], s["z1"]), max(s["z0"], s["z1"]) + s["h"]
-        return (s["x"], (y_lo + y_hi) / 2.0, (z_lo + z_hi) / 2.0,
-                s["w"], y_hi - y_lo, z_hi - z_lo)
-    raise ValueError(f"tipo di struttura sconosciuto: {s['tipo']}")
-
-
 def riferimenti():
-    """Strutture interne note nel formato atteso da piramide_unificato.py /
-    piramide_acustica_vh.py:
+    """Gli ingombri di questa piramide nel formato di piramide_unificato.py /
+    piramide_acustica_vh.py.
 
-        (num, nome, s_m, h_m, e_m, ns_m, ew_m, alt_m)
-
-    con s_m = posizione NORD-SUD del centro dell'ingombro, h_m = quota del
-    CENTRO sopra il piano di base, e_m = offset EST del centro, poi le
-    dimensioni N-S x E-O x altezza. Gli offset sono riferiti al NORD VERO
-    (la griglia SAR e' ruotata: chi li usa deve ruotarli, non sommarli)."""
-    out = []
-    for s in STRUTTURE:
-        x_c, y_c, z_c, dx, dy, dz = _bbox(s)
-        out.append((s["num"], s["nome"], y_c, z_c, x_c, dy, dx, dz))
-    return out
-
-
-def descrizione():
-    """Righe di log leggibili con provenienza e grado di certezza."""
-    return [f"{s['num']:2d}. {s['nome']} - {s['certezza']}" for s in STRUTTURE]
+    Il calcolo sta in piramide_3d_comune.riferimenti(): era identico parola
+    per parola nei due script 3D, insieme a _bbox(). Qui resta solo il legame
+    con la tabella STRUTTURE di questo file, che e' l'unica cosa che cambia
+    fra le due piramidi."""
+    return _riferimenti(STRUTTURE)
 
 
 # ================================================================
@@ -239,54 +217,30 @@ def controlli():
 # ================================================================
 # 8. DISEGNO (solo se eseguito direttamente)
 # ================================================================
+#: trasparenze delle due primitive, unica cosa che distingueva questo disegno
+#: da quello di Kefren nelle righe che ora stanno in piramide_3d_comune
+ALPHA_CAMERA = 0.72
+ALPHA_CORRIDOIO = 0.68
+
+
 def _disegna():
-    import numpy as np
     import matplotlib.pyplot as plt
-    from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 
     fig = plt.figure(figsize=(12, 9))
     ax = fig.add_subplot(111, projection="3d")
     ax.set_title("Piramide di Cheope - ricostruzione 3D")
 
-    v = np.array([[-L, -L, 0.0], [L, -L, 0.0], [L, L, 0.0], [-L, L, 0.0],
-                  [0.0, 0.0, H]])
-    facce = [[v[0], v[1], v[4]], [v[1], v[2], v[4]], [v[2], v[3], v[4]],
-             [v[3], v[0], v[4]], [v[0], v[1], v[2], v[3]]]
-    ax.add_collection3d(Poly3DCollection(facce, facecolors="gold", linewidths=0.5,
-                                         edgecolors="goldenrod", alpha=0.08))
-
-    def box(x_c, y_c, z_b, dim, colore, etichetta):
-        dx, dy, dz = dim
-        x = np.array([x_c - dx/2, x_c + dx/2, x_c + dx/2, x_c - dx/2] * 2)
-        y = np.array([y_c - dy/2, y_c - dy/2, y_c + dy/2, y_c + dy/2] * 2)
-        z = np.array([z_b] * 4 + [z_b + dz] * 4)
-        idx = [[0, 1, 2, 3], [4, 5, 6, 7], [0, 1, 5, 4],
-               [2, 3, 7, 6], [1, 2, 6, 5], [0, 3, 7, 4]]
-        verts = [[[x[i], y[i], z[i]] for i in f] for f in idx]
-        ax.add_collection3d(Poly3DCollection(verts, facecolors=colore, linewidths=0.5,
-                                             edgecolors="black", alpha=0.72,
-                                             label=etichetta))
-
-    def corridoio(x_f, y0, z0, y1, z1, width, height, colore, etichetta):
-        w = width / 2.0
-        a = np.array([[x_f-w, y0, z0], [x_f+w, y0, z0],
-                      [x_f+w, y0, z0+height], [x_f-w, y0, z0+height]])
-        b = np.array([[x_f-w, y1, z1], [x_f+w, y1, z1],
-                      [x_f+w, y1, z1+height], [x_f-w, y1, z1+height]])
-        fs = [[a[0], a[1], a[2], a[3]], [b[0], b[1], b[2], b[3]],
-              [a[0], a[1], b[1], b[0]], [a[3], a[2], b[2], b[3]],
-              [a[0], a[3], b[3], b[0]], [a[1], a[2], b[2], b[1]]]
-        ax.add_collection3d(Poly3DCollection(fs, facecolors=colore, linewidths=0.3,
-                                             edgecolors="black", alpha=0.68,
-                                             label=etichetta))
+    guscio_piramide(ax, L, H)
 
     for s in STRUTTURE:
         if s["tipo"] == "corridoio":
-            corridoio(s["x"], s["y0"], s["z0"], s["y1"], s["z1"],
-                      s["w"], s["h"], s["colore"], s["nome"])
+            disegna_corridoio(ax, s["x"], s["y0"], s["z0"], s["y1"], s["z1"],
+                              s["w"], s["h"], s["colore"], s["nome"],
+                              ALPHA_CORRIDOIO)
         else:
-            box(s["x"], s["y"], s["z"], (s["dx"], s["dy"], s["dz"]),
-                s["colore"], s["nome"])
+            disegna_box(ax, s["x"], s["y"], s["z"],
+                        (s["dx"], s["dy"], s["dz"]), s["colore"], s["nome"],
+                        ALPHA_CAMERA)
 
     ax.scatter([GREAT_STEP[0]], [GREAT_STEP[1]], [GREAT_STEP[2]],
                s=22, label="Great Step")
@@ -296,9 +250,7 @@ def _disegna():
     ax.set_zlabel("Quota Altimetrica (Z) [m]")
     ax.set_xlim([-120, 120]); ax.set_ylim([-120, 120]); ax.set_zlim([-40, 150])
     ax.view_init(elev=22, azim=-45)
-    handles, labels = ax.get_legend_handles_labels()
-    by_label = dict(zip(labels, handles))
-    ax.legend(by_label.values(), by_label.keys(), loc="upper left", fontsize="small")
+    legenda_senza_doppioni(ax)
     ax.grid(True, linestyle="--", alpha=0.5)
     plt.tight_layout()
     plt.show()
@@ -314,8 +266,5 @@ if __name__ == "__main__":
         print(f"\n--- {nome} ---")
         print(f"Lunghezza dichiarata: {len_dich:.2f} m | da coordinate: {len_calc:.4f} m")
         print(f"Angolo dichiarato: {ang_dich:.4f} gradi | da coordinate: {ang_calc:.4f} gradi")
-    print("\n=== STRUTTURE INTERNE (ingombri esportati a piramide_acustica_vh.py) ===")
-    for (num, nome, s_m, h_m, e_m, ns_m, ew_m, alt_m) in riferimenti():
-        print(f"{num:2d}. {nome:52s} N-S {s_m:+8.2f} m | quota {h_m:+7.2f} m | "
-              f"E {e_m:+6.2f} m | ingombro {ns_m:6.2f} x {ew_m:6.2f} x {alt_m:6.2f} m")
+    stampa_riferimenti(STRUTTURE)
     _disegna()

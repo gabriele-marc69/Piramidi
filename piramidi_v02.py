@@ -1083,6 +1083,37 @@ class ChipWindow:
         return self.p1 - self.p0 + 1
 
 
+#: metri per grado di latitudine, e per grado di longitudine all'equatore.
+#: Erano due letterali ripetuti in quattordici punti del file; ora stanno qui e
+#: le due funzioni sotto sono gli unici modi previsti per usarli.
+M_PER_GRADO_LAT = 111_132.0
+M_PER_GRADO_LON_EQ = 111_320.0
+
+
+def _enu_offset(lat, lon, lat0: float, lon0: float):
+    """Offset locale (est, nord) in metri di (lat, lon) rispetto a (lat0, lon0).
+
+    Piano tangente con i due fattori metrici standard. Queste due costanti
+    comparivano scritte a mano in QUATTORDICI punti del file, ogni volta con un
+    contorno diverso: bastava sbagliarne una copia perche' due geometrie si
+    spostassero l'una rispetto all'altra senza che nulla desse errore, ed e'
+    esattamente il guasto che l'autotest F39 esiste per intercettare. Funziona
+    identica su scalari e su array perche' non converte nulla: e' aritmetica."""
+    m_lat = M_PER_GRADO_LAT
+    m_lon = M_PER_GRADO_LON_EQ * math.cos(math.radians(lat0))
+    return (lon - lon0) * m_lon, (lat - lat0) * m_lat
+
+
+def _latlon_from_enu(east, north, lat0: float, lon0: float):
+    """L'inversa esatta di _enu_offset(): (est, nord) -> (lat, lon).
+
+    Stessi due fattori, quindi le due funzioni restano coerenti per
+    costruzione; separarle era il modo migliore per farle divergere."""
+    m_lat = M_PER_GRADO_LAT
+    m_lon = M_PER_GRADO_LON_EQ * math.cos(math.radians(lat0))
+    return lat0 + north / m_lat, lon0 + east / m_lon
+
+
 def pyramid_extent_radar(ann: S1Annotation, geo: Geocoder
                          ) -> Tuple[float, float, float, float]:
     """Estensione in (linea, pixel) occupata dalle piramidi in geometria radar.
@@ -1094,8 +1125,6 @@ def pyramid_extent_radar(ann: S1Annotation, geo: Geocoder
     l_min = p_min = float("inf")
     l_max = p_max = float("-inf")
     for p in PYRAMIDS:
-        m_lat = 111_132.0
-        m_lon = 111_320.0 * math.cos(math.radians(p.lat))
         half = p.base_side_m / 2.0
         inv = _local_affine_inverse(geo, p.lat, p.lon, 1.5 * half)
         # i quattro spigoli di base piu' l'apice
@@ -1107,8 +1136,7 @@ def pyramid_extent_radar(ann: S1Annotation, geo: Geocoder
         for dx, dy, h in pts:
             x = dx * ca - dy * sa
             y = dx * sa + dy * ca
-            lat = p.lat + y / m_lat
-            lon = p.lon + x / m_lon
+            lat, lon = _latlon_from_enu(x, y, p.lat, p.lon)
             l, q = inv(np.array([lat]), np.array([lon]))
             l, q = float(l[0]), float(q[0])
             href = float(geo.llh(l, q)[2])
@@ -1337,6 +1365,37 @@ def estimate_shift(master: np.ndarray, slave: np.ndarray) -> Tuple[complex, floa
 # 5.  Fase geometrica di riferimento (F02)
 # ==========================================================================
 
+def _node_grid(geo: Geocoder, win: ChipWindow, n_nodes: Tuple[int, int]):
+    """Reticolo di nodi sul chip e relativi bersagli ECEF.
+
+    Il preambolo era scritto due volte, identico, in reference_range_difference
+    e in perp_baseline_field: stesso reticolo, stessa geolocation grid, stessa
+    conversione in ECEF. Cambiava solo cosa se ne faceva dopo."""
+    nl, np_ = n_nodes
+    ln = np.linspace(win.l0, win.l1, nl)
+    pn = np.linspace(win.p0, win.p1, np_)
+    gl, gp = np.meshgrid(ln, pn, indexing="ij")
+    lat, lon, h = geo.llh(gl.ravel(), gp.ravel())
+    return ln, pn, ecef_from_llh(lat, lon, h)
+
+
+def _spline_to_pixels(ln: np.ndarray, pn: np.ndarray, val: np.ndarray,
+                      win: ChipWindow, dtype) -> np.ndarray:
+    """Spline bicubica sui nodi, valutata su ogni pixel del chip.
+
+    Anche questa coda era duplicata. Le grandezze interpolate (delta_R in metri
+    e B_perp in metri) sono geometriche e lisce, quindi la spline non ha nulla
+    a che vedere con l'avvolgimento della fase."""
+    from scipy.interpolate import RectBivariateSpline
+
+    nl, np_ = len(ln), len(pn)
+    spl = RectBivariateSpline(ln, pn, val.reshape(nl, np_),
+                              kx=min(3, nl - 1), ky=min(3, np_ - 1))
+    ll = np.arange(win.l0, win.l1 + 1, dtype=np.float64)
+    pp = np.arange(win.p0, win.p1 + 1, dtype=np.float64)
+    return spl(ll, pp).astype(dtype)
+
+
 def reference_range_difference(
     orb_s: Orbit, orb_m: Orbit, geo: Geocoder, win: ChipWindow,
     n_nodes: Tuple[int, int] = (16, 24),
@@ -1349,23 +1408,10 @@ def reference_range_difference(
     un reticolo di nodi e interpolato con spline bicubica: delta_R e' una
     quantita' geometrica liscia in metri, quindi l'interpolazione non ha nulla a
     che vedere con l'avvolgimento della fase."""
-    from scipy.interpolate import RectBivariateSpline
-
-    nl, np_ = n_nodes
-    ln = np.linspace(win.l0, win.l1, nl)
-    pn = np.linspace(win.p0, win.p1, np_)
-    gl, gp = np.meshgrid(ln, pn, indexing="ij")
-    lat, lon, h = geo.llh(gl.ravel(), gp.ravel())
-    tgt = ecef_from_llh(lat, lon, h)                    # [n, 3]
-
+    ln, pn, tgt = _node_grid(geo, win, n_nodes)
     r_s, _, _ = orb_s.slant_range(tgt)
     r_m, _, _ = orb_m.slant_range(tgt)
-    d = (r_s - r_m).reshape(nl, np_)
-
-    spl = RectBivariateSpline(ln, pn, d, kx=min(3, nl - 1), ky=min(3, np_ - 1))
-    ll = np.arange(win.l0, win.l1 + 1, dtype=np.float64)
-    pp = np.arange(win.p0, win.p1 + 1, dtype=np.float64)
-    return spl(ll, pp).astype(np.float64)
+    return _spline_to_pixels(ln, pn, r_s - r_m, win, np.float64)
 
 
 def perp_baseline_field(
@@ -1377,14 +1423,7 @@ def perp_baseline_field(
     Usarne un solo valore scalare (come faceva la versione precedente) e' una
     approssimazione accettabile su 3 km, ma calcolarlo per pixel costa poco e
     toglie un termine di errore sistematico dal k_z."""
-    from scipy.interpolate import RectBivariateSpline
-
-    nl, np_ = n_nodes
-    ln = np.linspace(win.l0, win.l1, nl)
-    pn = np.linspace(win.p0, win.p1, np_)
-    gl, gp = np.meshgrid(ln, pn, indexing="ij")
-    lat, lon, h = geo.llh(gl.ravel(), gp.ravel())
-    tgt = ecef_from_llh(lat, lon, h)
+    ln, pn, tgt = _node_grid(geo, win, n_nodes)
 
     _, p_m, v_m = orb_m.slant_range(tgt)
     _, p_s, _ = orb_s.slant_range(tgt)
@@ -1399,11 +1438,7 @@ def perp_baseline_field(
     b_par = np.einsum("ij,ij->i", b, los)
     b_perp = np.einsum("ij,ij->i", b - b_par[:, None] * los, nrm)
 
-    spl = RectBivariateSpline(ln, pn, b_perp.reshape(nl, np_),
-                              kx=min(3, nl - 1), ky=min(3, np_ - 1))
-    ll = np.arange(win.l0, win.l1 + 1, dtype=np.float64)
-    pp = np.arange(win.p0, win.p1 + 1, dtype=np.float64)
-    return spl(ll, pp).astype(np.float32)
+    return _spline_to_pixels(ln, pn, b_perp, win, np.float32)
 
 
 # ==========================================================================
@@ -1442,10 +1477,7 @@ def _pyramid_footprint_mask(geo: Geocoder, win: ChipWindow, scale: float = 1.0) 
 
     m = np.zeros(gl.shape, dtype=bool)
     for p in PYRAMIDS:
-        mlat = 111_132.0
-        mlon = 111_320.0 * math.cos(math.radians(p.lat))
-        dx = (lon - p.lon) * mlon
-        dy = (lat - p.lat) * mlat
+        dx, dy = _enu_offset(lat, lon, p.lat, p.lon)
         half = 0.5 * p.base_side_m * scale
         m |= (np.abs(dx) <= half) & (np.abs(dy) <= half)
     return m
@@ -1745,14 +1777,11 @@ def _local_affine_inverse(geo: Geocoder, lat0: float, lon0: float, span_m: float
     decine di migliaia di punti. Su poche centinaia di metri la mappa e' affine
     con errore molto inferiore al pixel, e le ancore la vincolano ai minimi
     quadrati."""
-    m_lat = 111_132.0
-    m_lon = 111_320.0 * math.cos(math.radians(lat0))
     d = np.linspace(-span_m, span_m, 3)
     a_lat, a_lon, a_l, a_p = [], [], [], []
     for dy in d:
         for dx in d:
-            la = lat0 + dy / m_lat
-            lo = lon0 + dx / m_lon
+            la, lo = _latlon_from_enu(dx, dy, lat0, lon0)
             l, q = geo.latlon_to_line_pixel(la, lo)
             a_lat.append(la)
             a_lon.append(lo)
@@ -1811,10 +1840,7 @@ def simulate_pyramids_radar(
         dx = uu * half * ca - vv * half * sa
         dy = uu * half * sa + vv * half * ca
 
-        m_lat = 111_132.0
-        m_lon = 111_320.0 * math.cos(math.radians(p.lat))
-        lat = p.lat + dy / m_lat
-        lon = p.lon + dx / m_lon
+        lat, lon = _latlon_from_enu(dx, dy, p.lat, p.lon)
 
         # (lat, lon) -> (linea, pixel) alla quota di RIFERIMENTO.
         # L'inversione di Newton costa troppo per decine di migliaia di punti:
@@ -2317,10 +2343,9 @@ def local_enu(geo: Geocoder, win: ChipWindow, sl: int, sp: int,
     h_ref = h_ref.reshape(gl.shape).astype(np.float32)
 
     lat0, lon0 = PYRAMIDS[0].lat, PYRAMIDS[0].lon
-    m_lat = 111_132.0
-    m_lon = 111_320.0 * math.cos(math.radians(lat0))
-    east = ((lon - lon0) * m_lon).astype(np.float32)
-    north = ((lat - lat0) * m_lat).astype(np.float32)
+    e_m, n_m = _enu_offset(lat, lon, lat0, lon0)
+    east = e_m.astype(np.float32)
+    north = n_m.astype(np.float32)
     return east, north, h_ref, (lat0, lon0)
 
 
@@ -2345,13 +2370,10 @@ def raw_gcp_nodes(geo: Geocoder, lat0: float, lon0: float) -> Dict[str, Any]:
     a diverse centinaia di metri di escursione, vedi il nodo piu' vicino
     stampato in console): la spline dentro il ritaglio non lo mostra solo
     perche' nessun nodo reale cade li' vicino."""
-    m_lat = 111_132.0
-    m_lon = 111_320.0 * math.cos(math.radians(lat0))
     lat = geo.lat_nodes.astype(np.float64)
     lon = geo.lon_nodes.astype(np.float64)
     h = geo.height_nodes.astype(np.float64)
-    east = (lon - lon0) * m_lon
-    north = (lat - lat0) * m_lat
+    east, north = _enu_offset(lat, lon, lat0, lon0)
     ll, pp = np.meshgrid(geo.lines, geo.pixels, indexing="ij")
     return {
         "n_l": int(lat.shape[0]), "n_p": int(lat.shape[1]),
@@ -2396,7 +2418,11 @@ def plateau_heights_from_stack(cfg: Config, geo: Geocoder,
 
     # controllo di consistenza su tutte le date dello stack
     per_data: List[Dict[str, Any]] = []
-    m_lon = 111_320.0 * math.cos(math.radians(PYRAMIDS[0].lat))
+    # unico posto che NON usa _enu_offset, e di proposito: qui il fattore di
+    # longitudine e' quello del centro della scena (PYRAMIDS[0]) mentre lo
+    # scostamento e' misurato da CIASCUNA piramide, quindi i due riferimenti
+    # non coincidono e la sostituzione cambierebbe il risultato.
+    m_lon = M_PER_GRADO_LON_EQ * math.cos(math.radians(PYRAMIDS[0].lat))
     for entry in discover_stack(cfg):
         try:
             root = ET.parse(entry.annotation).getroot()
@@ -2411,7 +2437,7 @@ def plateau_heights_from_stack(cfg: Config, geo: Geocoder,
             continue
         row: Dict[str, Any] = {"data": entry.date, "h": [], "d_km": []}
         for p in PYRAMIDS:
-            dist = np.hypot((gl - p.lat) * 111_132.0, (go - p.lon) * m_lon)
+            dist = np.hypot((gl - p.lat) * M_PER_GRADO_LAT, (go - p.lon) * m_lon)
             k = int(np.argmin(dist))
             row["h"].append(float(gh[k]))
             row["d_km"].append(float(dist[k] / 1000.0))
@@ -2442,10 +2468,7 @@ def _pyramid_local_xy(east: np.ndarray, north: np.ndarray, p: Pyramid,
 
     Rotazione INVERSA di ``azimuth_deg``, cioe' l'inversa esatta della
     convenzione con cui ``pyramid_mesh()`` costruisce i quattro spigoli."""
-    m_lat = 111_132.0
-    m_lon = 111_320.0 * math.cos(math.radians(lat0))
-    cx = (p.lon - lon0) * m_lon
-    cy = (p.lat - lat0) * m_lat
+    cx, cy = _enu_offset(p.lat, p.lon, lat0, lon0)
     a = math.radians(p.azimuth_deg)
     ca, sa = math.cos(a), math.sin(a)
     de = np.asarray(east, dtype=np.float64) - cx
@@ -2578,10 +2601,7 @@ def ground_dem_suolo(lat0: float, lon0: float, east: np.ndarray, north: np.ndarr
     info: Dict[str, Any] = {
         "datum_xml_m": [round(float(h_xml.min()), 2), round(float(h_xml.max()), 2)]}
 
-    m_lat = 111_132.0
-    m_lon = 111_320.0 * math.cos(math.radians(lat0))
-    lat = lat0 + north / m_lat
-    lon = lon0 + east / m_lon
+    lat, lon = _latlon_from_enu(east, north, lat0, lon0)
     latS, latN = float(lat.min()), float(lat.max())
     lonW, lonE = float(lon.min()), float(lon.max())
     pad_lat = max(0.002, 0.15 * (latN - latS))
@@ -2683,10 +2703,7 @@ def ground_dem_suolo(lat0: float, lon0: float, east: np.ndarray, north: np.ndarr
 
 def pyramid_mesh(p: Pyramid, lat0: float, lon0: float) -> Dict[str, Any]:
     """Vertici e facce della piramide ideale in ENU locale [m] -- riferimento."""
-    m_lat = 111_132.0
-    m_lon = 111_320.0 * math.cos(math.radians(lat0))
-    cx = (p.lon - lon0) * m_lon
-    cy = (p.lat - lat0) * m_lat
+    cx, cy = _enu_offset(p.lat, p.lon, lat0, lon0)
     h = p.base_side_m / 2.0
     a = math.radians(p.azimuth_deg)
     ca, sa = math.cos(a), math.sin(a)
@@ -2774,8 +2791,6 @@ def known_structures(lat0: float, lon0: float,
     from matplotlib.colors import to_hex
 
     by_name = {p.name: p for p in PYRAMIDS}
-    m_lat = 111_132.0
-    m_lon = 111_320.0 * math.cos(math.radians(lat0))
     out: List[Dict[str, Any]] = []
 
     for mod_name, pyr_name in STRUCTURE_SOURCES:
@@ -2790,8 +2805,7 @@ def known_structures(lat0: float, lon0: float,
                 print(f"      strutture: {mod_name} non disponibile ({exc})")
             continue
 
-        cx = (p.lon - lon0) * m_lon
-        cy = (p.lat - lat0) * m_lat
+        cx, cy = _enu_offset(p.lat, p.lon, lat0, lon0)
         ang = math.radians(p.azimuth_deg)
         ca, sa = math.cos(ang), math.sin(ang)
 
@@ -3762,6 +3776,10 @@ def build_html(res: Dict[str, Any], cfg: Config,
     h_s = res["height_display"][gi, gj]
     g_s = res["gamma"][gi, gj]
     good_s = res["good"][gi, gj]
+    # normalizzata una volta sola: serve sia alla nuvola decimata sia al
+    # reticolo xml_ref, e ricalcolarla due volte dava per forza lo stesso
+    # risultato (i percentili sono quelli dell'intera matrice in entrambi i casi)
+    mm_n = _norm01(res["mm"])
     # F30: i nodi non affidabili prendono la quota di riferimento SOLO per
     # avere un valore finito da proiettare e da usare nel calcolo delle
     # normali; nella nuvola escono come punti piccoli e spenti, e il pulsante
@@ -3781,7 +3799,7 @@ def build_html(res: Dict[str, Any], cfg: Config,
         "good": good_s.astype(np.int8).ravel().tolist(),
         "amp": np.round(np.clip(amp_n, 0, 1), 3).ravel().tolist(),
         "coh": np.round(res["coherence"][gi, gj], 3).ravel().tolist(),
-        "mm": np.round(_norm01(res["mm"])[gi, gj], 3).ravel().tolist(),
+        "mm": np.round(mm_n[gi, gj], 3).ravel().tolist(),
         # F31: concentrazione spettrale e riga dominante del micro-moto, sulla
         # stessa griglia (eventualmente decimata) della nuvola misurata: serve
         # solo a colorare quella nuvola con l'attributo "micro-moto", non e'
@@ -3818,7 +3836,7 @@ def build_html(res: Dict[str, Any], cfg: Config,
         "mask": res["pyr_mask"].astype(np.int8).ravel().tolist(),
         "mmc": np.round(res["mm_coh"], 3).ravel().tolist(),
         "mmf": np.round(res["mm_freq"], 1).ravel().tolist(),
-        "mm": np.round(_norm01(res["mm"]), 3).ravel().tolist(),
+        "mm": np.round(mm_n, 3).ravel().tolist(),
     }
 
     # --- nuvola tomografica ------------------------------------------------
@@ -3911,10 +3929,13 @@ def build_html(res: Dict[str, Any], cfg: Config,
     suolo_arr = res.get("suolo_dem")
     suolo_dem_payload = None
     if suolo_arr is not None:
+        # est/nord non si ripetono: il suolo sta sullo STESSO reticolo di
+        # xml_ref (l'intera griglia multilooked, mai decimata), quindi
+        # serializzarne una seconda copia significava scrivere due volte le
+        # stesse n_l*n_p coordinate nella pagina. La pagina le riusa da
+        # xml_ref; n_l/n_p restano qui e il lettore JS verifica che coincidano.
         suolo_dem_payload = {
             "n_l": int(n_l), "n_p": int(n_p),
-            "east": np.round(east, 1).ravel().tolist(),
-            "north": np.round(north, 1).ravel().tolist(),
             "h": np.round(suolo_arr, 1).ravel().tolist(),
             "info": res.get("suolo_info") or {},
             "plateau": (res.get("suolo_plateau") or {}).get("per_piramide", []),
@@ -4294,8 +4315,13 @@ const ATTR = {h:HGT, amp:Float32Array.from(S.amp), gamma:Float32Array.from(S.gam
               coh:Float32Array.from(S.coh), mm:MME, mmc:MMC};
 const PX = new Float32Array(NN), PY = new Float32Array(NN), PZ = new Float32Array(NN);
 const RX = new Float32Array(XNN), RY = new Float32Array(XNN), RZ = new Float32Array(XNN);
-const DEAST = DEM ? Float32Array.from(DEM.east) : new Float32Array(0);
-const DNORTH = DEM ? Float32Array.from(DEM.north) : new Float32Array(0);
+/* il suolo condivide il reticolo di xml_ref: le sue est/nord non
+   viaggiano piu' nel payload, si riusano quelle. Se un giorno i due
+   reticoli divergessero, DEM.east tornerebbe presente e vincerebbe. */
+const DEAST = DEM ? (DEM.east ? Float32Array.from(DEM.east) : XEAST)
+                  : new Float32Array(0);
+const DNORTH = DEM ? (DEM.north ? Float32Array.from(DEM.north) : XNORTH)
+                   : new Float32Array(0);
 const DHGT  = DEM ? Float32Array.from(DEM.h) : new Float32Array(0);
 const DX = new Float32Array(DNN), DY = new Float32Array(DNN), DZ = new Float32Array(DNN);
 
@@ -4367,6 +4393,18 @@ function updateCam(){
   _scale=Math.min(W,H)/span*V.zoom;
   _pd=span*1.9;
 }
+/* i tre limiti di taglio dipendono solo dai cursori, quindi sono costanti
+   dentro un fotogramma: erano ricalcolati in drawSurface, drawMM, drawVoxels,
+   drawDem e hud, cioe' cinque volte le stesse due formule a ogni frame.
+   Stessa scelta gia' fatta per la camera qui sopra. */
+let _zlo=0,_zhi=0,_secLimit=0;
+function updateCuts(){
+  _zlo=D.z_min+(D.z_max-D.z_min)*V.zlo;
+  _zhi=D.z_min+(D.z_max-D.z_min)*V.zhi;
+  _secLimit = V.secAxis==='E'
+      ? RANGE_E[0]+(RANGE_E[1]-RANGE_E[0])*V.sec
+      : RANGE_N[0]+(RANGE_N[1]-RANGE_N[0])*V.sec;
+}
 function project(x,y,z){
   x-=cxs; y-=cys; z=(z-zOff)*V.zEx;
   const X=x*_cy-y*_sy, Y=x*_sy+y*_cy;
@@ -4379,6 +4417,9 @@ function project(x,y,z){
 /* proiezione di TUTTI i nodi in un colpo solo: con la maglia ogni poligono
    riproiettava i suoi quattro vertici, cioe' quattro volte lo stesso lavoro
    per ogni vertice interno; con la nuvola serve comunque una passata sola.
+   Le cinque righe di algebra sono le stesse di project() ed e' una ripetizione
+   VOLUTA, non una svista: chiamare project() qui dentro allocherebbe un array
+   di tre elementi per ciascuno degli XNN/NN/DNN nodi a ogni fotogramma.
    F33: ex/nx/n parametrizzano il reticolo, cosi' la stessa funzione serve
    sia alla nuvola misurata (EAST/NORTH, NN) sia al reticolo xml_ref
    (XEAST/XNORTH, XNN), che ha una propria dimensione. */
@@ -4549,11 +4590,7 @@ function drawAxes(){
 function drawSurface(step){
   if(colorDirty) buildColors();
   if(shadeDirty) buildShade();
-  const zlo=D.z_min+(D.z_max-D.z_min)*V.zlo;
-  const zhi=D.z_min+(D.z_max-D.z_min)*V.zhi;
-  const secLimit = V.secAxis==='E'
-      ? RANGE_E[0]+(RANGE_E[1]-RANGE_E[0])*V.sec
-      : RANGE_N[0]+(RANGE_N[1]-RANGE_N[0])*V.sec;
+  const zlo=_zlo, zhi=_zhi, secLimit=_secLimit;
   /* F20/F29: per un campo di quote su reticolo regolare l'ordine painter si
      ottiene percorrendo righe e colonne dal lato lontano a quello vicino.
      E' esatto (la profondita' e' affine in (i,j)) e costa O(n) invece di un
@@ -4606,10 +4643,7 @@ function drawSurface(step){
    chiedono di evitare.                                                    */
 function drawMM(step){
   if(spriteDirty) buildSprites();
-  const zlo=D.z_min+(D.z_max-D.z_min)*V.zlo, zhi=D.z_min+(D.z_max-D.z_min)*V.zhi;
-  const secLimit = V.secAxis==='E'
-      ? RANGE_E[0]+(RANGE_E[1]-RANGE_E[0])*V.sec
-      : RANGE_N[0]+(RANGE_N[1]-RANGE_N[0])*V.sec;
+  const zlo=_zlo, zhi=_zhi, secLimit=_secLimit;
   const iRev = RZ[idxX(XNL-1,0)] > RZ[idxX(0,0)];
   const jRev = RZ[idxX(0,XNP-1)] > RZ[idxX(0,0)];
   const cell=SP_CELL, dev=SP_DEV, half=cell/2, row=MM_ROW*SP_DEV;
@@ -4676,7 +4710,7 @@ function drawStructures(){
 const NV=D.voxels.length;
 const VXY=new Float32Array(NV*2), VZ=new Float32Array(NV), VSRC=new Int32Array(NV);
 function drawVoxels(step){
-  const zlo=D.z_min+(D.z_max-D.z_min)*V.zlo, zhi=D.z_min+(D.z_max-D.z_min)*V.zhi;
+  const zlo=_zlo, zhi=_zhi;
   let m=0;
   for(let k=0;k<NV;k+=step){
     const v=D.voxels[k];
@@ -4745,10 +4779,7 @@ function buildDemSprite(){
 function drawDem(step){
   if(!DEM || !DNN) return 0;
   if(!DEM_SPRITE) buildDemSprite();
-  const zlo=D.z_min+(D.z_max-D.z_min)*V.zlo, zhi=D.z_min+(D.z_max-D.z_min)*V.zhi;
-  const secLimit = V.secAxis==='E'
-      ? RANGE_E[0]+(RANGE_E[1]-RANGE_E[0])*V.sec
-      : RANGE_N[0]+(RANGE_N[1]-RANGE_N[0])*V.sec;
+  const zlo=_zlo, zhi=_zhi, secLimit=_secLimit;
   const half=DEM_CELL/2;
   let n=0;
   for(let ai=0; ai<DNL; ai+=step){
@@ -4779,6 +4810,7 @@ function render(){
   const cand = V.onlyPyr ? N_PYR : NN;
   const step = ((dragging||V.autoRot) && cand>4000) ? 2 : 1;
   updateCam();
+  updateCuts();
   ctx.clearRect(0,0,W,H);
   ctx.fillStyle='#020617'; ctx.fillRect(0,0,W,H);
   if(V.grid) drawGrid();
@@ -4802,7 +4834,7 @@ function render(){
   dirty=false;
 }
 function hud(){
-  const zlo=(D.z_min+(D.z_max-D.z_min)*V.zlo), zhi=(D.z_min+(D.z_max-D.z_min)*V.zhi);
+  const zlo=_zlo, zhi=_zhi;
   const area = D.area_m ? (D.area_m[0].toFixed(0)+'x'+D.area_m[1].toFixed(0)+' m') : '-';
   document.getElementById('hud').innerHTML =
     'superficie <b>'+nDots+'</b> punti &nbsp; suolo DEM <b>'+nDem+'</b> &nbsp; micro-moto <b>'+nMM+'</b>'+
@@ -5243,6 +5275,12 @@ syncPlay(); loop();
 # 13.  Autotest  (F21)
 # ==========================================================================
 
+def _esito(superato: bool) -> bool:
+    """Stampa l'esito di un controllo dell'autotest e lo restituisce."""
+    print("ok" if superato else "FALLITO")
+    return superato
+
+
 def selftest() -> int:
     """Blocca le convenzioni che, se invertite, ribaltano silenziosamente i
     risultati: segno dello shift, segno del tracker, interpolatore orbitale."""
@@ -5257,11 +5295,7 @@ def selftest() -> int:
     sh = apply_shift(img, complex(5.0, 0.0))
     peak = int(np.argmax(np.abs(sh[:, 0])))
     print(f"  apply_shift(+5) sposta il picco 20 -> {peak}", end="  ")
-    if peak != 25:
-        ok = False
-        print("FALLITO")
-    else:
-        print("ok")
+    ok &= _esito(peak == 25)
 
     # 2) tracker: slave(x) = master(x - d)  =>  ritorna +d
     m = rng.standard_normal((1, 32, 32)) + 1j * rng.standard_normal((1, 32, 32))
@@ -5270,11 +5304,7 @@ def selftest() -> int:
     s = apply_shift(m[0], d)[None].astype(np.complex64)
     est = complex(_batch_subpixel_shift(m, s, refine="dft")[0])
     print(f"  tracker: atteso {d}, stimato ({est.real:+.2f},{est.imag:+.2f})", end="  ")
-    if abs(est - d) > 0.25:
-        ok = False
-        print("FALLITO")
-    else:
-        print("ok")
+    ok &= _esito(abs(est - d) <= 0.25)
 
     # 3) Lagrange contro un'orbita polinomiale nota
     t = np.arange(0.0, 100.0, 10.0)
@@ -5289,11 +5319,7 @@ def selftest() -> int:
     lin = np.array([np.interp(tq[0], t, pos[:, c]) for c in range(3)])
     err_lin = float(np.linalg.norm(lin - p_true))
     print(f"  orbita: Lagrange err={err:.3e} m  vs  lineare err={err_lin:.1f} m", end="  ")
-    if err > 1e-6 or err_lin <= err:
-        ok = False
-        print("FALLITO")
-    else:
-        print("ok")
+    ok &= _esito(err <= 1e-6 and err_lin > err)
 
     # 4) banco di sub-aperture dentro lo spettro, con Doppler rate realistico
     from piramidi_v01 import Burst as _B
@@ -5314,11 +5340,7 @@ def selftest() -> int:
                              burst_idx=0, pixel=2100.0)
     hi = -plan.b_cd / 2 + (plan.n_d - 1) * plan.step + plan.b_sub + plan.b_shift
     print(f"  sub-aperture: bordo slave {hi:+.2f} Hz  <= {plan.b_cd / 2:+.2f} Hz", end="  ")
-    if hi > plan.b_cd / 2 + 1e-6:
-        ok = False
-        print("FALLITO")
-    else:
-        print("ok")
+    ok &= _esito(hi <= plan.b_cd / 2 + 1e-6)
 
     # 5) layover: il confronto e' con l'INCIDENZA, non con 90 - incidenza
     lay = layover_report(39.4)
@@ -5326,11 +5348,8 @@ def selftest() -> int:
     look = lay["angolo_di_vista_off_nadir_deg"]
     print(f"  layover: soglia {lay['soglia_layover_deg']} gradi, "
           f"vista off-nadir {look} gradi", end="  ")
-    if any(v != "layover" for v in near.values()) or not (30.0 < look < 40.0):
-        ok = False
-        print("FALLITO")
-    else:
-        print("ok")
+    ok &= _esito(all(v == "layover" for v in near.values())
+                 and 30.0 < look < 40.0)
 
     # 6) F39: il profilo del suolo sulle piramidi. Due invarianti che, se
     #    rotte, fanno galleggiare o affondare il layer senza dare errore:
@@ -5338,10 +5357,8 @@ def selftest() -> int:
     #    l'inversa ESATTA di quella con cui pyramid_mesh() pone gli spigoli.
     lat0, lon0 = PYRAMIDS[0].lat, PYRAMIDS[0].lon
     base = [40.0, 41.0, 42.0]
-    m_lat = 111_132.0
-    m_lon = 111_320.0 * math.cos(math.radians(lat0))
-    ep = np.array([(p.lon - lon0) * m_lon for p in PYRAMIDS])
-    np_ = np.array([(p.lat - lat0) * m_lat for p in PYRAMIDS])
+    ep, np_ = _enu_offset(np.array([p.lat for p in PYRAMIDS]),
+                          np.array([p.lon for p in PYRAMIDS]), lat0, lon0)
     z_apex = pyramid_profile_enu(ep, np_, lat0, lon0, base)
     att = np.array([b + p.height_m for b, p in zip(base, PYRAMIDS)])
     e_apex = float(np.max(np.abs(z_apex - att)))
@@ -5353,11 +5370,7 @@ def selftest() -> int:
         corner_err = max(corner_err, float(np.max(np.abs(zc - base[k]))))
     print(f"  suolo (F39): apice err={e_apex:.3e} m, spigoli di base "
           f"err={corner_err:.3e} m", end="  ")
-    if e_apex > 1e-6 or corner_err > 1e-6:
-        ok = False
-        print("FALLITO")
-    else:
-        print("ok")
+    ok &= _esito(e_apex <= 1e-6 and corner_err <= 1e-6)
 
     print("\n  " + ("TUTTI GLI AUTOTEST SUPERATI" if ok else "AUTOTEST FALLITI"))
     return 0 if ok else 1

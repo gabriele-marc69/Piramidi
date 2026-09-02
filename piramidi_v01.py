@@ -65,7 +65,7 @@ import re
 import sys
 import time
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, asdict
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np

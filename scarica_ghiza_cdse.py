@@ -79,8 +79,9 @@ CHUNK = 1 << 20                       # 1 MiB
 #: file di log lascerebbero una riga sola, illeggibile
 TTY = sys.stdout.isatty()
 
-#: attesa iniziale fra due tentativi, poi raddoppia fino a 120 s
+#: attesa iniziale fra due tentativi, poi raddoppia fino ad ATTESA_MASSIMA
 ATTESA_MINIMA = 5.0
+ATTESA_MASSIMA = 120.0
 
 #: byte oltre i quali un tentativo interrotto conta come "ha fatto strada" e
 #: azzera il backoff (misurato: la meta' delle cadute avviene entro 27 MB)
@@ -314,6 +315,18 @@ def checksum_md5(prod: Dict[str, Any]) -> Optional[str]:
 # 3.  HTTP con ritentativi
 # ==========================================================================
 
+def _ritenta(attesa: float, riga: str) -> float:
+    """Annuncia il ritentativo, aspetta, e restituisce la prossima attesa.
+
+    Le stesse tre righe -- messaggio, sleep, raddoppio col tetto a 120 s --
+    erano ricopiate in quattro punti; il tetto in particolare era una costante
+    scritta a mano quattro volte. La riga completa arriva dal chiamante perche'
+    ognuno dei quattro casi dice una cosa diversa su cosa e' andato storto."""
+    print(riga)
+    time.sleep(attesa)
+    return min(attesa * 2.0, ATTESA_MASSIMA)
+
+
 def _get_con_retry(session: requests.Session, url: str, cfg: Config,
                    params: Optional[Dict[str, Any]] = None,
                    headers: Optional[Dict[str, str]] = None,
@@ -343,9 +356,7 @@ def _get_con_retry(session: requests.Session, url: str, cfg: Config,
         except requests.RequestException as ex:
             ultimo = f"{type(ex).__name__}: {ex}"
         if tentativo < cfg.retries:
-            print(f"      ritento fra {attesa:.0f} s ({ultimo})")
-            time.sleep(attesa)
-            attesa = min(attesa * 2.0, 120.0)
+            attesa = _ritenta(attesa, f"      ritento fra {attesa:.0f} s ({ultimo})")
     raise RuntimeError(f"{url}: fallito dopo {cfg.retries} tentativi ({ultimo})")
 
 
@@ -417,9 +428,8 @@ def scarica_flusso(url: str, destinazione: str, atteso: int, cfg: Config,
         except requests.RequestException as ex:
             ultimo = f"{type(ex).__name__}: {ex}"
             if tentativo < cfg.retries:
-                print(f"      ritento fra {attesa:.0f} s ({ultimo})")
-                time.sleep(attesa)
-                attesa = min(attesa * 2.0, 120.0)
+                attesa = _ritenta(attesa,
+                                  f"      ritento fra {attesa:.0f} s ({ultimo})")
             continue
 
         with r:
@@ -468,19 +478,18 @@ def scarica_flusso(url: str, destinazione: str, atteso: int, cfg: Config,
                     # invece di continuare a crescere fino a due minuti.
                     if scritti - gia >= PROGRESSO_UTILE:
                         attesa = ATTESA_MINIMA
-                    print(f"      interrotto a {_fmt(scritti)} / {_fmt(totale)}"
-                          f"; ritento fra {attesa:.0f} s ({ultimo})")
-                    time.sleep(attesa)
-                    attesa = min(attesa * 2.0, 120.0)
+                    attesa = _ritenta(
+                        attesa,
+                        f"      interrotto a {_fmt(scritti)} / {_fmt(totale)}"
+                        f"; ritento fra {attesa:.0f} s ({ultimo})")
                 continue
 
         _fine_avanzamento()
         if totale and scritti != totale:
             ultimo = f"trasferimento incompleto: {scritti} / {totale} byte"
             if tentativo < cfg.retries:
-                print(f"      {ultimo}; ritento fra {attesa:.0f} s")
-                time.sleep(attesa)
-                attesa = min(attesa * 2.0, 120.0)
+                attesa = _ritenta(attesa,
+                                  f"      {ultimo}; ritento fra {attesa:.0f} s")
             continue
         os.replace(parziale, destinazione)
         return scritti
@@ -857,6 +866,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     print(f"\n  [4] scarico di {len(prodotti)} prodotti in {cfg.out_dir}")
     esiti: List[Dict[str, Any]] = []
     scaricati = 0
+    errori_di_fila = 0
     for i, prod in enumerate(prodotti, 1):
         nome = str(prod["Name"])
         atteso = int(prod.get("ContentLength", 0))
@@ -896,6 +906,23 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     "orbita_relativa": attributo(prod, "relativeOrbitNumber"),
                     "direzione": attributo(prod, "orbitDirection")})
         esiti.append(rec)
+
+        # Il ritentativo dentro scarica_* copre il TRASFERIMENTO, non la
+        # richiesta del token: se cade la risoluzione DNS, ogni prodotto
+        # fallisce in un istante e la coda si consuma tutta. Osservato il
+        # 2026-09-02: un guasto di rete di pochi minuti ha lasciato 47 prodotti
+        # su 51 "in errore" in una manciata di secondi, senza averne toccato
+        # uno. Una pausa crescente fra un errore e il successivo trasforma
+        # quella cascata in un'attesa.
+        if rec["stato"] == "errore":
+            errori_di_fila += 1
+            if i < len(prodotti):
+                pausa = min(ATTESA_MINIMA * 2 ** errori_di_fila, ATTESA_MASSIMA)
+                print(f"      {errori_di_fila} errori di fila: aspetto "
+                      f"{pausa:.0f} s prima del prossimo prodotto")
+                time.sleep(pausa)
+        else:
+            errori_di_fila = 0
 
     manifest = os.path.join(cfg.out_dir, "manifest_scarico.json")
     with open(manifest, "w", encoding="utf-8") as fh:
