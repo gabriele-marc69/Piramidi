@@ -1,0 +1,212 @@
+============================================================================
+piramidi_v02 - tomografia multi-baseline VH + superficie reale
+============================================================================
+  ATTENZIONE: la cartella contiene passaggi di tracce diverse. Tengo 44 acquisizioni Ascending/traccia 58, scarto 5 Descending/traccia 167 (baseline oltre la critica: coerenza nulla).
+
+stack VH: 44 acquisizioni (20260103 -> 20260901)
+
+  [1] accumulo interferometrico (lettura .tiff, deramping TOPS, coregistrazione, fase geometrica di riferimento)
+  F47: 1 acquisizioni scartate prima della pila: 20260627 (bersaglio fuori dal prodotto: fetta adiacente della stessa passata)
+  supermaster selezionato: 20260503 (F13: minimo costo di decorrelazione combinato)
+  F42: ritaglio riposizionato per data (offset massimo 10429 linee, 126 pixel); alla rampa di fase resta solo il residuo sub-pixel
+      radiometria (F40): sigma0 calibrato dal calibration-*.xml; NESZ mediano -23.2 dB, segnale -16.7 dB, SNR 6.5 dB
+      celle entro 3 dB dal rumore: 29.5 % -- il pavimento viene sottratto dopo il multilooking
+    [20260103] B_perp=   +0.06 m  dt=  -120 d  finestra=(    +0,  +33) px burst 2  residuo=(+0.774,-0.256) px  coer. 0.277 -> 0.346 [coer]  [corr (-1.10,-0.10) PSR 12.9: 0.187]
+    [20260109] B_perp= -124.74 m  dt=  -114 d  finestra=( +4508, +106) px burst 5  residuo=(+0.455,-0.005) px  coer. 0.186 -> 0.186 [geo]
+    [20260115] B_perp=  -38.53 m  dt=  -108 d  finestra=(    +2,  +42) px burst 2  residuo=(+1.553,+0.091) px  coer. 0.199 -> 0.322 [coer]
+    [20260121] B_perp=  -47.68 m  dt=  -102 d  finestra=( +4509,  +76) px burst 5  residuo=(+3.203,+1.933) px  coer. 0.179 -> 0.193 [coer]
+    [20260127] B_perp= -139.67 m  dt=   -96 d  finestra=(    -5,  +70) px burst 2  residuo=(+1.290,-0.073) px  coer. 0.214 -> 0.330 [coer]
+    [20260202] B_perp=  -23.71 m  dt=   -90 d  finestra=( +4510,  +58) px burst 5  residuo=(-1.545,+2.550) px  coer. 0.180 -> 0.191 [coer]
+    [20260208] B_perp= -152.61 m  dt=   -84 d  finestra=(    -1,  +68) px burst 2  residuo=(-0.162,+0.174) px  coer. 0.334 -> 0.334 [geo]  [corr (-0.00,-0.05) PSR 17.2: 0.338]
+    [20260214] B_perp=  -84.20 m  dt=   -78 d  finestra=( +4509,  +83) px burst 5  residuo=(+0.157,-0.090) px  coer. 0.181 -> 0.181 [geo]
+    [20260220] B_perp= -100.90 m  dt=   -72 d  finestra=(    +6,  +47) px burst 2  residuo=(-1.112,-0.470) px  coer. 0.261 -> 0.283 [coer]  [corr (-0.05,+2.20) PSR 12.0: 0.183]
+    [20260226] B_perp= -138.77 m  dt=   -66 d  finestra=( +4509,  +93) px burst 5  residuo=(+3.126,-0.358) px  coer. 0.183 -> 0.245 [coer]
+    [20260304] B_perp=  -60.89 m  dt=   -60 d  finestra=(    +6,  +35) px burst 2  residuo=(-0.423,+0.447) px  coer. 0.285 -> 0.285 [geo]  [corr (+1.15,-0.15) PSR 13.8: 0.205]
+    [20260310] B_perp= -186.24 m  dt=   -54 d  finestra=( +4509, +104) px burst 5  residuo=(-2.458,-1.959) px  coer. 0.178 -> 0.191 [coer]
+    [20260316] B_perp= -109.31 m  dt=   -48 d  finestra=(    +7,  +45) px burst 2  residuo=(+1.318,-0.270) px  coer. 0.215 -> 0.245 [coer]
+    [20260322] B_perp= -146.47 m  dt=   -42 d  finestra=( +4511,  +96) px burst 5  residuo=(+2.935,+2.262) px  coer. 0.179 -> 0.193 [coer]
+    [20260328] B_perp= -101.53 m  dt=   -36 d  finestra=(    +7,  +43) px burst 2  residuo=(+0.452,-0.267) px  coer. 0.256 -> 0.256 [geo]
+    [20260403] B_perp=  -83.54 m  dt=   -30 d  finestra=( +4511,  +77) px burst 5  residuo=(+0.090,-0.006) px  coer. 0.178 -> 0.178 [geo]  [corr (+1.15,-1.05) PSR 12.4: 0.176]
+    [20260409] B_perp= -115.25 m  dt=   -24 d  finestra=(    +4,  +49) px burst 2  residuo=(+1.601,-0.227) px  coer. 0.213 -> 0.298 [coer]
+    [20260415] B_perp= -163.95 m  dt=   -18 d  finestra=( +4511, +100) px burst 5  residuo=(+2.795,+1.621) px  coer. 0.179 -> 0.194 [coer]
+    [20260421] B_perp= -143.85 m  dt=   -12 d  finestra=(   +10,  +41) px burst 2  residuo=(+0.854,-0.371) px  coer. 0.211 -> 0.225 [coer]  [corr (+1.85,-0.00) PSR 10.7: 0.199]
+    [20260427] B_perp= -113.31 m  dt=    -6 d  finestra=( +4513,  +67) px burst 5  residuo=(+2.313,+2.182) px  coer. 0.175 -> 0.188 [coer]
+    [20260428] B_perp=  -85.18 m  dt=    -5 d  finestra=( +4542,  +58) px burst 5  residuo=(+0.206,-0.307) px  coer. 0.371 -> 0.371 [geo]  [corr (+1.20,-0.05) PSR 13.8: 0.295]
+    [20260503] B_perp=   +0.00 m  dt=    +0 d  finestra=(    +0,   +0) px burst 2  residuo=(+0.000,+0.000) px [master]
+    [20260509] B_perp= -176.69 m  dt=    +6 d  finestra=( +4513,  +87) px burst 5  residuo=(-0.346,-0.250) px  coer. 0.178 -> 0.178 [geo]  [corr (-2.30,-1.10) PSR 10.9: 0.178]
+    [20260521] B_perp= -130.26 m  dt=   +18 d  finestra=( +4538,  +81) px burst 5  residuo=(+1.101,+0.345) px  coer. 0.351 -> 0.399 [coer]
+    [20260522] B_perp= -142.62 m  dt=   +19 d  finestra=( +4541,  +82) px burst 5  residuo=(+0.370,+0.333) px  coer. 0.320 -> 0.320 [geo]  [corr (+1.10,+1.25) PSR 10.2: 0.225]
+    [20260527] B_perp=  +86.65 m  dt=   +24 d  finestra=(    +3,  -12) px burst 2  residuo=(+0.310,-0.321) px  coer. 0.367 -> 0.411 [coer]  [corr (+1.10,-0.05) PSR 14.4: 0.324]
+    [20260602] B_perp=  -64.63 m  dt=   +30 d  finestra=( +4540,  +58) px burst 5  residuo=(+1.436,-0.358) px  coer. 0.227 -> 0.357 [coer]
+    [20260603] B_perp= -116.35 m  dt=   +31 d  finestra=( +4543,  +69) px burst 5  residuo=(-0.114,-0.154) px  coer. 0.295 -> 0.295 [geo]  [corr (+1.15,-0.85) PSR 11.3: 0.210]
+    [20260608] B_perp=  +28.79 m  dt=   +36 d  finestra=(    +4,   +1) px burst 2  residuo=(+0.420,-0.071) px  coer. 0.370 -> 0.397 [coer]  [corr (-1.05,-0.15) PSR 12.4: 0.228]
+    [20260615] B_perp= -102.73 m  dt=   +43 d  finestra=( +4542,  +71) px burst 5  residuo=(+0.076,+0.271) px  coer. 0.311 -> 0.311 [geo]
+    [20260620] B_perp=   +5.23 m  dt=   +48 d  finestra=(    +2,   +1) px burst 2  residuo=(+0.530,-0.042) px  coer. 0.352 -> 0.404 [coer]
+    [20260627] B_perp= -166.94 m  dt=   +55 d  finestra=(+10429, -126) px burst 9  residuo=(+0.401,-0.171) px  coer. 0.180 -> 0.180 [geo]
+    [20260703] B_perp= -153.95 m  dt=   +61 d  finestra=( +4539,  +87) px burst 5  residuo=(+1.240,-0.047) px  coer. 0.204 -> 0.319 [coer]
+    [20260709] B_perp= -184.01 m  dt=   +67 d  finestra=( +4540,  -24) px burst 5  residuo=(+1.295,-0.498) px  coer. 0.205 -> 0.263 [coer]
+    [20260715] B_perp= -113.00 m  dt=   +73 d  finestra=( +4537,  +66) px burst 5  residuo=(+1.346,-0.396) px  coer. 0.197 -> 0.366 [coer]  [corr (-0.05,+0.15) PSR 12.9: 0.213]
+    [20260721] B_perp= -210.46 m  dt=   +79 d  finestra=( +4540,  -25) px burst 5  residuo=(+0.218,-0.110) px  coer. 0.255 -> 0.255 [geo]
+    [20260727] B_perp= -131.80 m  dt=   +85 d  finestra=( +4537,  +76) px burst 5  residuo=(+0.929,-0.174) px  coer. 0.283 -> 0.331 [coer]  [corr (+0.20,-1.10) PSR 10.3: 0.224]
+    [20260802] B_perp= -142.62 m  dt=   +91 d  finestra=( +4540,  -42) px burst 5  residuo=(+1.760,+0.470) px  coer. 0.203 -> 0.251 [coer]
+    [20260808] B_perp= -148.42 m  dt=   +97 d  finestra=( +4537,  +80) px burst 5  residuo=(+0.559,-0.008) px  coer. 0.280 -> 0.336 [coer]  [corr (+0.10,-2.15) PSR 11.5: 0.196]
+    [20260814] B_perp=  -97.71 m  dt=  +103 d  finestra=( +4541,  -54) px burst 5  residuo=(+1.006,-0.063) px  coer. 0.208 -> 0.265 [coer]  [corr (+1.00,-1.10) PSR 11.7: 0.213]
+    [20260820] B_perp= -187.45 m  dt=  +109 d  finestra=( +4534,  +88) px burst 5  residuo=(+0.784,-0.001) px  coer. 0.243 -> 0.341 [coer]
+    [20260826] B_perp= -118.91 m  dt=  +115 d  finestra=( +4539,  -52) px burst 5  residuo=(+0.234,+0.471) px  coer. 0.270 -> 0.295 [coer]  [corr (-0.05,-1.15) PSR 12.3: 0.204]
+    [20260901] B_perp= -129.12 m  dt=  +121 d  finestra=( +4534,  +74) px burst 5  residuo=(+1.597,-0.425) px  coer. 0.256 -> 0.348 [coer]
+  piano di riferimento calibrato su 27632 pixel di piana (F02)
+      cubo: (43, 90, 372) [date, linee, pixel]  incidenza mediana 36.83 gradi
+      area processata (F28): 1256 m azimuth x 1446 m ground range, margine 150 m attorno alle piramidi
+----------------------------------------------------------------------------
+BUDGET TOMOGRAFICO MULTI-BASELINE
+----------------------------------------------------------------------------
+  lunghezza d'onda radar                =       5.55 cm
+  slant range                      R    =     850.84 km
+  angolo di incidenza              th   =      36.83 gradi
+  baseline impilate                     =         43
+  escursione baseline ortogonali        =      297.1 m
+  deviazione standard delle baseline    =       63.5 m
+
+  RISOLUZIONE  (separazione di Rayleigh fra due diffusori)
+    delta_z = lambda*R/(2*B)  in slant  =       79.4 m
+    proiettata in verticale             =      132.5 m
+    altezza di ambiguita'               =    12715.9 m
+    celle sull'altezza del target       =       1.05
+    >> struttura interna separabile?              NO
+
+  PRECISIONE  (quota di UN diffusore dominante)  -- F15
+    coerenza tipica assunta       gamma =       0.60
+    sigma_h = lambda*R*sin(th)*sigma_phi/(4*pi*sigma_B)
+                                        =        5.1 m
+    altezza del target                  =      138.5 m
+    >> superficie reale misurabile?               SI
+
+  Le due righe non si contraddicono: separare due diffusori dentro la
+  stessa cella e stimare la quota di quello dominante sono problemi
+  diversi. Confonderli e' l'errore concettuale corretto in F15.
+----------------------------------------------------------------------------
+  geometria (F16): incidenza 36.83 gradi, vista off-nadir 32.73 gradi; Cheope layover; Chefren layover; Micerino layover
+
+  [2] multilooking 1x4 -> reticolo (90, 93) (~14.0 m azimuth x 15.5 m ground range)
+
+  [3] proiezione delle piramidi nella geometria radar
+      apice piu' alto sopra il riferimento: 141.6 m -> spostamento in slant 48.7 pixel (12.2 celle multilooked)
+      celle raggiunte dalle piramidi: 706 (impronta al suolo: 556, sovrapposizione 78 %)
+      ripiegamento massimo per cella (layover): 700 punti di superficie
+
+      contrasto radiometrico delle piramidi per polarizzazione (F26):
+      VH (20260509): contrasto nella zona di layover layover +1.7 dB, medio +2.6 dB, basso -0.9 dB  |  picco Cheope +13.0 dB
+
+  [4] calibrazione del segno di k_z sui dati (validazione livello 1)
+  segno di k_z calibrato: -1  (margine piramidi-piana = +7.8 m)
+
+  [5] inversione tomografica multi-baseline (periodogramma in quota)
+  [6] superficie reale: quota del diffusore dominante pixel per pixel
+      reticolo GREZZO dello .xml (F35): 10 x 21 nodi su tutta la scena, spaziatura 1511 linee x 1333 pixel -- il ritaglio delle piramidi (90 x 372 pixel) sta dentro UNA frazione di una sola cella di quel reticolo.
+      nodo .xml piu' vicino al ritaglio: a 3.2 km, quota 64 m. Rilievo VERO sull'intera scena: 1 .. 610 m (dev.std 139 m) -- i nodi grezzi non sono un piano, ma nessuno cade abbastanza vicino al ritaglio da farlo vedere nella spline locale.
+  [6b] suolo (DEM): terreno + profilo delle piramidi (F39)
+      quote lette dai 43 annotation.xml di DATA_Ghiza
+        Cheope (Khufu)         bilineare .xml  63.94 m  (bilineare sulle 43 date 44.0..64.0 m, nodo grezzo piu' vicino a 2.5 km; letteratura 60 m)
+        Chefren (Khafre)       bilineare .xml  64.14 m  (bilineare sulle 43 date 44.7..64.2 m, nodo grezzo piu' vicino a 3.0 km; letteratura 70 m)
+        Micerino (Menkaure)    bilineare .xml  64.38 m  (bilineare sulle 43 date 45.6..64.5 m, nodo grezzo piu' vicino a 3.3 km; letteratura 66 m)
+        ATTENZIONE: le date non concordano sulla quota di riferimento (scarto massimo 20.1 m): il datum del layer e' quello del master, con questa incertezza
+      [DEM] riuso out_piramidi_v02\dem_suolo.npz: rilievo esterno 18..101 m
+      [suolo] rilievo esterno riportato sul datum .xml: -11.2 m (mediana sull'impronta delle piramidi) -> terreno 7..89 m
+      [suolo] Cheope (Khufu)         base   53.8 m   apice  192.3 m   impronta 276 nodi   (letteratura: base 60 m, scarto -6.2 m)
+      [suolo] Chefren (Khafre)       base   66.1 m   apice  202.5 m   impronta 240 nodi   (letteratura: base 70 m, scarto -3.9 m)
+      [suolo] Micerino (Menkaure)    base   66.4 m   apice  127.4 m   impronta 55 nodi   (letteratura: base 66 m, scarto +0.4 m)
+      [suolo] con le piramidi: 7..196 m (terreno da solo 7..89 m)
+      escursione sul ritaglio: 189 m (contro 1.0 m della bilineare .xml, F36)
+      quota di riferimento dallo .xml: 63.6 .. 64.7 m
+      distribuzione NULLA del periodogramma (F22): mediana 0.2903, p99 0.4315
+      soglia di qualita' = 0.432 (percentile 99.0 del nullo)
+      pixel di qualita': 3901 / 8370 (46.6 %)  -- gamma mediana misurata 0.418
+
+  [7] coerenza interferometrica
+      coerenza mediana MISURATA = 0.419 (a priori si era assunto 0.60)
+      budget di precisione aggiornato: sigma_h = 8.3 m (era 5.1 m con la coerenza assunta)
+      despicatura (F27): 463 nodi di qualita' sostituiti con la mediana locale (11.9 % dei nodi sopra soglia)
+  [8] micro-moto dalle sub-aperture Doppler (chip esteso, F07)
+----------------------------------------------------------------------------
+BANCO DI SUB-APERTURE DOPPLER  (micro-moto)
+----------------------------------------------------------------------------
+  banda Doppler totale        B_cD    =    313.00 Hz
+  banda di guardia            B_DL    =    156.50 Hz
+  larghezza sub-banda         B_sub   =    156.50 Hz
+  separazione master/slave    B_shift =     28.17 Hz
+  passo di marcia                     =     11.67 Hz
+  sub-aperture                N_D     =        12
+  risoluzione griglia Doppler         =     2.193 Hz/bin
+  bin per sub-banda                   =      71.4
+
+  MAPPATURA FREQUENZA -> TEMPO (dal Doppler rate dell'annotation)
+  azimuth FM rate             k_a     =   -2188.3 Hz/s
+  rate TOPS combinata         k_t     =    1491.5 Hz/s
+  tempo di illuminazione del target   =     143.0 ms
+  passo temporale fra sub-aperture    =      5.33 ms
+  ritardo master-slave                =     12.87 ms
+  finestra osservata (marcia completa)=     58.64 ms
+
+  campionamento meccanico     f_s     =    187.57 Hz
+  frequenza osservabile max (Nyquist) =     38.84 Hz
+  frequenza osservabile min (finestra)=     17.05 Hz
+  >> il banco risolve una banda di frequenze meccaniche
+
+  PERCHE' LA TOMOGRAFIA ACUSTICA DELLE FONTI QUI NON E' APPLICABILE
+  apertura sintetica          L_sa    =       958 m
+  lambda acustica a  38.8 Hz (v=6000 m/s) =       154 m
+  delta_z acustica = lambda*R/(2*L_sa) =     68.5 km
+
+  Limite dei dati: il TOPS di Sentinel-1 illumina un bersaglio per
+  143 ms soltanto, quindi la traccia di vibrazione dura 59 ms
+  e la frequenza meccanica accessibile e' di decine di Hz. Le fonti
+  lavorano su spotlight con B_cD ~ 22 kHz e indagano a 12.5 kHz: due
+  ordini di grandezza in piu'. E' questa la ragione per cui qui la
+  profondita' viene dalle baseline orbitali e non dal micro-moto, che
+  resta un attributo di superficie e nulla di piu'.
+----------------------------------------------------------------------------
+      sub-apertura 1/12  [ -156.5 ..    +0.0] Hz
+      sub-apertura 2/12  [ -144.8 ..   +11.7] Hz
+      sub-apertura 3/12  [ -133.2 ..   +23.3] Hz
+      sub-apertura 4/12  [ -121.5 ..   +35.0] Hz
+      sub-apertura 5/12  [ -109.8 ..   +46.7] Hz
+      sub-apertura 6/12  [  -98.2 ..   +58.3] Hz
+      sub-apertura 7/12  [  -86.5 ..   +70.0] Hz
+      sub-apertura 8/12  [  -74.8 ..   +81.7] Hz
+      sub-apertura 9/12  [  -63.2 ..   +93.3] Hz
+      sub-apertura 10/12  [  -51.5 ..  +105.0] Hz
+      sub-apertura 11/12  [  -39.8 ..  +116.7] Hz
+      sub-apertura 12/12  [  -28.2 ..  +128.3] Hz
+      micro-moto: concentrazione spettrale mediana 0.300 (rumore bianco = 0.091), riga dominante entro [17.1, 38.8] Hz su 34% delle celle
+  [9] discriminante multi-attributo pieno/vuoto
+
+  volume finale: (90, 93, 257) [azimuth, range, elevazione]
+
+  [10] validazione a tre livelli
+      quota mediana della piana: 65.0 m
+      regressione misurato vs simulato (F25): pendenza -0.058 +- 0.149 (attesa 1.0, t = -0.4), r = -0.026, rmse = 78.4 m su 223 celle
+      pendenza robusta (Theil-Sen) = +0.041  IC95 [0.005, 0.077]
+        quota simulata   5-  30 m:   70 celle, misurato mediano   +3.4 m
+        quota simulata  30-  60 m:   52 celle, misurato mediano   +5.3 m
+        quota simulata  60-  90 m:   60 celle, misurato mediano   +5.4 m
+        quota simulata  90- oltre:   41 celle, misurato mediano   +8.5 m
+      -> nessuna dipendenza significativa dalla quota simulata
+      Cheope (Khufu)           sommita': misurato    +9.7 m  simulato  +108.3 m  (FUORI da 2 sigma, 11 celle)
+      Chefren (Khafre)         sommita': misurato    +8.4 m  simulato  +113.2 m  (FUORI da 2 sigma, 24 celle)
+      Micerino (Menkaure)      celle di qualita insufficienti  (22/77 celle)
+      separabilita' piramidi/piana: +5.3 m  (z = 1.0)
+
+  [11] profili verticali e mappe
+
+  --- colonne verticali: piramidi contro deserto ---
+    Cheope (Khufu)           int=  -8.01 dB  sol=0.0663  picco a z=   +6.2 m
+    Chefren (Khafre)         int= -10.47 dB  sol=0.0631  picco a z=   +6.2 m
+    Micerino (Menkaure)      int= -15.56 dB  sol=0.0236  picco a z=   +3.1 m
+    deserto di controllo     int=  -7.20 dB  sol=0.1800  (99 px)
+
+  [12] uscite
+      superficie: 90x93 nodi; voxel: 20000
+
+  HTML 3D interattivo : E:\claude_code\Biondi_Malanga\out_piramidi_v02\tomografia_piramidi_3d.html
+  altri output in     : E:\claude_code\Biondi_Malanga\out_piramidi_v02
+  completato in 72.3 s

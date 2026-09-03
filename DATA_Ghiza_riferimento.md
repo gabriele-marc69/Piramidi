@@ -219,26 +219,28 @@ Il verso e il numero di orbita relativa li legge `_traccia()` dal `manifest.safe
 | 2026-03-06 | 167 descending | `S1C_IW_SLC__1SDV_20260306T035131_20260306T035209_006638_00D664_3CEE.SAFE` |
 | 2026-05-05 | 167 descending | `S1C_IW_SLC__1SDV_20260505T035134_20260505T035212_007513_00F415_11CD.SAFE` |
 
-### Non ancora complete al momento della corsa (17)
+### Stato alla corsa a 43 date del 2026-09-03 (`out_piramidi_v02/`, `run_43date.log`)
 
-Sono sulla traccia giusta ma il `.tiff` non c'era ancora: `scarica_ghiza_cdse.py` stava ancora lavorando. **La cartella e' un bersaglio mobile**: fra due corse a mezz'ora di distanza la pila e' passata da 28 a 29 date e il master e' cambiato da 2026-03-22 a 2026-03-28. Rilanciare lo stesso comando quando lo scarico e' finito le include da solo.
+**La cartella e' un bersaglio mobile**: fra due corse a mezz'ora di distanza
+la pila e' passata da 28 a 29 date e il master e' cambiato da 2026-03-22 a
+2026-03-28; il 2026-09-03, con 44 prodotti completi, il master e' 2026-05-03.
+Rilanciare lo stesso comando quando lo scarico e' finito include da solo le
+date nuove.
 
-| data | sat | prodotto |
-|------|-----|----------|
-| 2026-05-10 | S1D | `S1D_IW_SLC__1SDV_20260510T155552_20260510T155620_002724_004960_6E00.SAFE` |
-| 2026-05-15 | S1A | `S1A_IW_SLC__1SDV_20260515T155646_20260515T155713_064530_0820BD_6DAA.SAFE` |
-| 2026-06-02 | S1C | `S1C_IW_SLC__1SDV_20260602T155544_20260602T155611_007929_0101F2_60F1.SAFE` |
-| 2026-06-03 | S1D | `S1D_IW_SLC__1SDV_20260603T155554_20260603T155621_003074_005502_0EDC.SAFE` |
-| 2026-06-27 | S1D | `S1D_IW_SLC__1SDV_20260627T155543_20260627T155614_003424_006088_24A7.SAFE` |
-| 2026-06-27 | S1D | `S1D_IW_SLC__1SDV_20260627T155612_20260627T155639_003424_006088_BC07.SAFE` |
-| 2026-07-03 | S1C | `S1C_IW_SLC__1SDV_20260703T155542_20260703T155610_008381_010953_C590.SAFE` |
-| 2026-07-09 | S1D | `S1D_IW_SLC__1SDV_20260709T155556_20260709T155623_003599_00666F_A304.SAFE` |
-| 2026-07-15 | S1C | `S1C_IW_SLC__1SDV_20260715T155543_20260715T155611_008556_010F01_1EE7.SAFE` |
-| 2026-07-21 | S1D | `S1D_IW_SLC__1SDV_20260721T155557_20260721T155624_003774_006C65_EBDF.SAFE` |
-| 2026-07-27 | S1C | `S1C_IW_SLC__1SDV_20260727T155544_20260727T155612_008731_0114D2_C22F.SAFE` |
-| 2026-08-02 | S1D | `S1D_IW_SLC__1SDV_20260802T155557_20260802T155624_003949_007286_ADFD.SAFE` |
-| 2026-08-08 | S1C | `S1C_IW_SLC__1SDV_20260808T155544_20260808T155612_008906_011AA5_22A3.SAFE` |
-| 2026-08-14 | S1D | `S1D_IW_SLC__1SDV_20260814T155558_20260814T155625_004124_007891_88F7.SAFE` |
-| 2026-08-20 | S1C | `S1C_IW_SLC__1SDV_20260820T155545_20260820T155613_009081_012067_77F2.SAFE` |
-| 2026-08-26 | S1D | `S1D_IW_SLC__1SDV_20260826T155559_20260826T155626_004299_007EB0_F9B2.SAFE` |
-| 2026-09-01 | S1C | `S1C_IW_SLC__1SDV_20260901T155546_20260901T155614_009256_012648_FDE1.SAFE` |
+Delle 46 ascendenti in catalogo, 44 erano complete sul disco e **43 sono
+entrate in pila**. Fuori:
+
+| data | sat | motivo | prodotto |
+|------|-----|--------|----------|
+| 2026-06-27 | S1D | seconda fetta della stessa passata, non contiene Giza (F47) | `S1D_IW_SLC__1SDV_20260627T155612_20260627T155639_003424_006088_BC07.SAFE` |
+| 2026-05-10 | S1D | `.tiff` mai completato: il server chiude il socket (SSL) e non concede la ripresa, 10 tentativi falliti | `S1D_IW_SLC__1SDV_20260510T155552_20260510T155620_002724_004960_6E00.SAFE` |
+| 2026-05-15 | S1A | idem | `S1A_IW_SLC__1SDV_20260515T155646_20260515T155713_064530_0820BD_6DAA.SAFE` |
+
+Per completarle basta rilanciare lo scarico (riprende dai file mancanti) e
+poi la corsa:
+
+```
+python scarica_ghiza_cdse.py --out DATA_Ghiza --mode swath --swath iw2 \
+                             --polarisation vh --start 2026-01-01 --relative-orbit 58
+python piramidi_v02.py --stack-dir DATA_Ghiza --out out_piramidi_v02
+```

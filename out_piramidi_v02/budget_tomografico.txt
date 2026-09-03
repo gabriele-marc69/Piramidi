@@ -3,22 +3,22 @@ BUDGET TOMOGRAFICO MULTI-BASELINE
 ----------------------------------------------------------------------------
   lunghezza d'onda radar                =       5.55 cm
   slant range                      R    =     850.84 km
-  angolo di incidenza              th   =      36.84 gradi
-  baseline impilate                     =         29
-  escursione baseline ortogonali        =      272.9 m
-  deviazione standard delle baseline    =       66.8 m
+  angolo di incidenza              th   =      36.83 gradi
+  baseline impilate                     =         43
+  escursione baseline ortogonali        =      297.1 m
+  deviazione standard delle baseline    =       63.5 m
 
   RISOLUZIONE  (separazione di Rayleigh fra due diffusori)
-    delta_z = lambda*R/(2*B)  in slant  =       86.5 m
-    proiettata in verticale             =      144.2 m
-    altezza di ambiguita'               =     6192.9 m
-    celle sull'altezza del target       =       0.96
+    delta_z = lambda*R/(2*B)  in slant  =       79.4 m
+    proiettata in verticale             =      132.5 m
+    altezza di ambiguita'               =    12715.9 m
+    celle sull'altezza del target       =       1.05
     >> struttura interna separabile?              NO
 
   PRECISIONE  (quota di UN diffusore dominante)  -- F15
-    coerenza tipica assunta       gamma =       0.30
+    coerenza tipica assunta       gamma =       0.42
     sigma_h = lambda*R*sin(th)*sigma_phi/(4*pi*sigma_B)
-                                        =       14.2 m
+                                        =        8.3 m
     altezza del target                  =      138.5 m
     >> superficie reale misurabile?               SI
 
@@ -36,18 +36,18 @@ BANCO DI SUB-APERTURE DOPPLER  (micro-moto)
   separazione master/slave    B_shift =     28.17 Hz
   passo di marcia                     =     11.67 Hz
   sub-aperture                N_D     =        12
-  risoluzione griglia Doppler         =     2.216 Hz/bin
-  bin per sub-banda                   =      70.6
+  risoluzione griglia Doppler         =     2.193 Hz/bin
+  bin per sub-banda                   =      71.4
 
   MAPPATURA FREQUENZA -> TEMPO (dal Doppler rate dell'annotation)
-  azimuth FM rate             k_a     =   -2188.0 Hz/s
-  rate TOPS combinata         k_t     =    1491.4 Hz/s
-  tempo di illuminazione del target   =     143.1 ms
+  azimuth FM rate             k_a     =   -2188.3 Hz/s
+  rate TOPS combinata         k_t     =    1491.5 Hz/s
+  tempo di illuminazione del target   =     143.0 ms
   passo temporale fra sub-aperture    =      5.33 ms
   ritardo master-slave                =     12.87 ms
-  finestra osservata (marcia completa)=     58.65 ms
+  finestra osservata (marcia completa)=     58.64 ms
 
-  campionamento meccanico     f_s     =    187.55 Hz
+  campionamento meccanico     f_s     =    187.57 Hz
   frequenza osservabile max (Nyquist) =     38.84 Hz
   frequenza osservabile min (finestra)=     17.05 Hz
   >> il banco risolve una banda di frequenze meccaniche

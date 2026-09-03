@@ -586,6 +586,62 @@ FIXES: Tuple[Tuple[str, str, str], ...] = (
      "solo al PRIMO scaricamento riuscito (nessuna cache .npz) e con verbose, "
      "quindi bastava avere gia' il file per non vederlo mai. Ora usa la "
      "costante M_PER_GRADO_LAT. Trovato con mypy, non a occhio."),
+    ("F46", "critico",
+     "Il residuo sub-pixel di coregistrazione veniva preso dal picco della "
+     "cross-correlazione di fase dell'intero chip ogni volta che il rapporto "
+     "picco/mediana superava 8 e il picco stava entro 2 pixel dal residuo "
+     "geometrico: 14 date su 41. Misurato sul VH di Giza (master 20260503): "
+     "quel picco cadeva quasi sempre a UN PIXEL INTERO dal residuo "
+     "geometrico (+1.15, -1.10, +1.85 ...) e, applicato, ABBASSAVA la "
+     "coerenza con il master -- 0.277 -> 0.187 il 3 gennaio, 0.320 -> 0.225 "
+     "il 22 maggio -- mentre lo spostamento che la massimizza sta entro un "
+     "pixel dal residuo geometrico e la porta a 0.346 e 0.327. Su un chip di "
+     "90 x 372 pixel in cross-pol con coerenza 0.3 la correlazione di fase "
+     "sbianca lo spettro e insegue le strutture di ampiezza (il layover "
+     "delle piramidi), non la fase. Ora il residuo lo decide la coerenza "
+     "stessa: refine_shift_by_coherence() parte dal residuo geometrico e "
+     "cerca su una griglia grossa-fine (raggio 2 px, passo 0.5 -> 0.125) lo "
+     "spostamento che massimizza la coerenza mediana con il master. Il picco "
+     "di correlazione resta calcolato e riportato accanto, per confronto. "
+     "Autotest 8."),
+    ("F47", "alto",
+     "CDSE consegna i prodotti a fette lungo l'orbita, e la stessa passata "
+     "puo' arrivare in due fette adiacenti con la stessa data (le due S1D del "
+     "2026-06-27). _stack_safe() le metteva entrambe in pila. Per quella che "
+     "non contiene Giza l'inversione della geocodifica, vincolata al "
+     "reticolo, si fermava sul bordo e ne usciva un offset di finestra senza "
+     "senso (-4408 linee), scartato da F42 per caso e con un messaggio "
+     "fuorviante; se entrambe lo avessero contenuto (zona di sovrapposizione) "
+     "la stessa acquisizione sarebbe entrata due volte con baseline identica, "
+     "un campione contato doppio nel periodogramma, nel nullo e nella scelta "
+     "del supermaster. Ora Geocoder.dentro() riconosce il bersaglio fuori "
+     "prodotto e una data entra una volta sola, PRIMA del calcolo delle "
+     "baseline, con il motivo detto a voce alta."),
+    ("F48", "medio",
+     "--dates valeva 11 per default: con 42 prodotti sul disco il programma "
+     "ne usava in silenzio i primi 11 in ordine di data, e la pila "
+     "multi-missione che allarga l'escursione di baseline restava fuori a "
+     "meno di ricordarsi --dates 99. Ora 0 (il default) significa tutte le "
+     "date presenti; un valore positivo resta un limite esplicito."),
+    ("F49", "medio",
+     "plateau_heights_from_stack() confrontava fra le date la quota del nodo "
+     "grezzo della geolocation grid PIU' VICINO alle piramidi. In una pila a "
+     "piu' missioni l'inquadramento cambia da un prodotto all'altro (4500 "
+     "linee fra S1A e S1C), quindi il nodo piu' vicino non e' lo stesso punto "
+     "di terreno: 39 m in un prodotto, 64 m nell'altro, e l'avviso 'le date "
+     "non concordano sul datum' scattava su un disaccordo che non esiste. "
+     "Ora si confronta la grandezza usata davvero come datum, la bilineare "
+     "locale di ciascuna data valutata sulle piramidi, e lo scarto massimo "
+     "fra le date viene riportato come incertezza del layer. Misurato sulla "
+     "pila a 41 date: 44..64 m, cioe' 20 m di incertezza sul datum a seconda "
+     "del prodotto che fa da master."),
+    ("F50", "basso",
+     "Il controllo di livello 2 confrontava sigma_h (8.5 m) con la deviazione "
+     "STANDARD della quota sulla piana (77 m), dominata dalla coda degli "
+     "errori grossolani da centinaia di metri che F27 toglie solo dal "
+     "disegno: il confronto falliva sempre per costruzione. Ora viene "
+     "riportata anche la dispersione robusta (1.4826 * MAD), che descrive il "
+     "nucleo gaussiano ed e' la grandezza confrontabile con sigma_h."),
 )
 
 
@@ -625,7 +681,7 @@ class Config:
     polarisation: str = "vh"
     platform: str = "s1c"
 
-    n_dates: int = 11
+    n_dates: int = 0                  # F48: 0 = tutte le date presenti
 
     # --- finestra di analisi ------------------------------------------------
     # F28: per default si processa SOLO l'area delle piramidi in geometria
@@ -893,6 +949,16 @@ class Geocoder:
             l = float(np.clip(l, self.lines[0], self.lines[-1]))
             p = float(np.clip(p, self.pixels[0], self.pixels[-1]))
         return l, p
+
+    def dentro(self, line: float, pixel: float, margine: float = 1.0) -> bool:
+        """F47 -- True se (line, pixel) sta DENTRO il reticolo del prodotto.
+
+        latlon_to_line_pixel() vincola il Newton al reticolo, quindi per un
+        punto che il prodotto non contiene restituisce una posizione sul
+        bordo, non un errore: qui la si riconosce. Il margine di un pixel
+        assorbe l'arrotondamento dell'ultimo passo di Newton."""
+        return bool(self.lines[0] + margine < line < self.lines[-1] - margine
+                    and self.pixels[0] + margine < pixel < self.pixels[-1] - margine)
 
 
 # ==========================================================================
@@ -1412,6 +1478,97 @@ def estimate_shift(master: np.ndarray, slave: np.ndarray) -> Tuple[complex, floa
     return shift, psr
 
 
+def _coerenza_mediana(a: np.ndarray, b: np.ndarray, window: int,
+                      den_b: Optional[np.ndarray] = None) -> float:
+    """Coerenza |<a b*>| / sqrt(<|a|^2> <|b|^2>) su finestre window x window,
+    riassunta dalla mediana sul chip. `den_b` permette di riusare <|b|^2>
+    quando b e' sempre lo stesso master."""
+    from scipy.ndimage import uniform_filter
+
+    prod = a * np.conj(b)
+    num = (uniform_filter(prod.real.astype(np.float32), window)
+           + 1j * uniform_filter(prod.imag.astype(np.float32), window))
+    den_a = uniform_filter((np.abs(a) ** 2).astype(np.float32), window)
+    if den_b is None:
+        den_b = uniform_filter((np.abs(b) ** 2).astype(np.float32), window)
+    return float(np.median(np.abs(num) / np.maximum(np.sqrt(den_a * den_b), 1e-9)))
+
+
+def refine_shift_by_coherence(
+    master: np.ndarray, slave: np.ndarray, start: complex,
+    radius: float = 2.0, coarse: float = 0.5, fine: float = 0.125,
+    window: int = 7, min_gain: float = 0.01,
+) -> Tuple[complex, float, float]:
+    """F46 -- residuo di coregistrazione scelto MASSIMIZZANDO LA COERENZA.
+
+    La versione precedente prendeva il picco della cross-correlazione di fase
+    dell'intero chip quando il suo rapporto picco/mediana superava 8. Misurato
+    sul VH di Giza (41 date, master 20260503): quel picco cadeva quasi sempre
+    a un pixel intero dal residuo geometrico (+1.15, -1.10, +1.85 ...) e,
+    applicato, ABBASSAVA la coerenza con il master -- 0.277 -> 0.187 il 3
+    gennaio, 0.320 -> 0.225 il 22 maggio -- mentre lo spostamento che la
+    massimizza sta entro un pixel dal residuo geometrico e la porta a 0.346
+    e 0.327. Su un chip di 90 x 372 pixel in cross-pol con coerenza 0.3 la
+    correlazione di fase sbianca lo spettro e insegue le strutture di
+    ampiezza (il layover delle piramidi), non la fase: e' lo strumento
+    sbagliato per uno stack interferometrico.
+
+    Qui il criterio e' quello della grandezza che si vuole davvero: la
+    coerenza mediana fra slave traslato e master, cercata su una griglia
+    grossa (`radius`, passo `coarse`) attorno al residuo geometrico e poi
+    raffinata dimezzando il passo fino a `fine`. Due parametri contro ottomila
+    celle: non c'e' nulla da sovradattare. La traslazione e' la stessa rampa
+    di fase di apply_shift(), con la FFT dello slave calcolata una volta sola.
+
+    Su una coppia DECORRELATA (coerenza al pavimento dello stimatore, ~0.18
+    con finestre 7x7) il massimo su ~130 candidati e' un massimo di rumore,
+    e lo spostamento che lo produce e' casuale: se il guadagno rispetto al
+    punto di partenza non supera `min_gain` si tiene il residuo geometrico,
+    che almeno ha un fondamento.
+
+    Restituisce (shift, coerenza raggiunta, coerenza al punto di partenza),
+    con la convenzione di apply_shift(): il chip allineato e'
+    apply_shift(slave, -shift)."""
+    from scipy.ndimage import uniform_filter
+
+    n_l, n_p = slave.shape
+    den_m = uniform_filter((np.abs(master) ** 2).astype(np.float32), window)
+    spettro = np.fft.fft2(slave)
+    fl = np.fft.fftfreq(n_l)[:, None]
+    fp = np.fft.fftfreq(n_p)[None, :]
+    cache: Dict[Tuple[float, float], float] = {}
+
+    def valuta(dl: float, dp: float) -> float:
+        key = (round(dl, 4), round(dp, 4))
+        if key not in cache:
+            if key == (0.0, 0.0):
+                s = slave
+            else:                     # == apply_shift(slave, -(dl + 1j*dp))
+                rampa = np.exp(2j * np.pi * (fl * dl + fp * dp))
+                s = np.fft.ifft2(spettro * rampa).astype(np.complex64)
+            cache[key] = _coerenza_mediana(s, master, window, den_m)
+        return cache[key]
+
+    c0 = valuta(float(start.real), float(start.imag))
+    best = (c0, float(start.real), float(start.imag))
+    centro = (float(start.real), float(start.imag))
+    raggio, passo = radius, coarse
+    while True:
+        g = np.arange(-raggio, raggio + 1e-9, passo)
+        for dl in g:
+            for dp in g:
+                c = valuta(centro[0] + float(dl), centro[1] + float(dp))
+                if c > best[0]:
+                    best = (c, centro[0] + float(dl), centro[1] + float(dp))
+        if passo <= fine + 1e-12:
+            break
+        centro = (best[1], best[2])
+        raggio, passo = passo, passo / 2.0
+    if best[0] - c0 < min_gain:
+        return start, c0, c0
+    return complex(best[1], best[2]), best[0], c0
+
+
 # ==========================================================================
 # 5.  Fase geometrica di riferimento (F02)
 # ==========================================================================
@@ -1548,6 +1705,41 @@ def build_interf_cube(
     orbits = [read_orbit(e.annotation) for e in entries]
     geos = [Geocoder(a) for a in anns]
 
+    # --- F47: il bersaglio deve stare DENTRO il prodotto, e una data entra
+    # una volta sola. CDSE consegna i prodotti a fette lungo l'orbita: due
+    # fette adiacenti della stessa passata (es. le due S1D del 2026-06-27)
+    # portano la stessa data e la stessa orbita, ma solo una contiene Giza.
+    # Per l'altra l'inversione della geocodifica si ferma sul bordo del
+    # reticolo e l'offset che ne esce e' privo di senso; se entrambe lo
+    # contenessero (zona di sovrapposizione) la stessa acquisizione entrerebbe
+    # due volte nella pila con baseline identica: un campione contato doppio
+    # nel periodogramma, nel nullo e nella scelta del supermaster.
+    posizioni: List[Tuple[float, float]] = []
+    tenute: List[int] = []
+    fuori: List[str] = []
+    viste: Dict[str, int] = {}
+    for i, e in enumerate(entries):
+        l_s, p_s = geos[i].latlon_to_line_pixel(PYRAMIDS[0].lat, PYRAMIDS[0].lon)
+        if not geos[i].dentro(l_s, p_s):
+            fuori.append(f"{e.date} (bersaglio fuori dal prodotto: fetta "
+                         f"adiacente della stessa passata)")
+            continue
+        if e.date in viste:
+            fuori.append(f"{e.date} (seconda fetta della stessa passata, "
+                         f"gia' in pila)")
+            continue
+        viste[e.date] = i
+        tenute.append(i)
+        posizioni.append((l_s, p_s))
+    if fuori:
+        if verbose:
+            print(f"  F47: {len(fuori)} acquisizioni scartate prima della pila: "
+                  + ", ".join(fuori))
+        entries = [entries[i] for i in tenute]
+        anns = [anns[i] for i in tenute]
+        orbits = [orbits[i] for i in tenute]
+        geos = [geos[i] for i in tenute]
+
     tgt0 = ecef_from_llh(PYRAMIDS[0].lat, PYRAMIDS[0].lon, PYRAMIDS[0].base_alt_m)
     bl_probe = compute_baselines(list(zip([e.date for e in entries], orbits)), tgt0, 0)
     mi = pick_supermaster(bl_probe)
@@ -1573,16 +1765,16 @@ def build_interf_cube(
     # del burst sbagliato. L'offset intero ora entra nella finestra di
     # lettura (e nell'indice di burst dello slave, che il deramping TOPS usa);
     # alla rampa di fase resta solo il residuo sub-pixel.
-    l_m, p_m = geo_m.latlon_to_line_pixel(PYRAMIDS[0].lat, PYRAMIDS[0].lon)
+    l_m, p_m = posizioni[mi]
     finestre: List[Tuple[ChipWindow, int, complex]] = []
-    tenute: List[int] = []
-    fuori: List[str] = []
+    tenute = []
+    fuori = []
     for i in range(len(entries)):
         if i == mi:
             finestre.append((win, burst, 0j))
             tenute.append(i)
             continue
-        l_s, p_s = geos[i].latlon_to_line_pixel(PYRAMIDS[0].lat, PYRAMIDS[0].lon)
+        l_s, p_s = posizioni[i]
         d_l, d_p = l_s - l_m, p_s - p_m
         off_l, off_p = int(round(d_l)), int(round(d_p))
         w_s = ChipWindow(win.l0 + off_l, win.l1 + off_l,
@@ -1687,6 +1879,10 @@ def build_interf_cube(
         ann, orb, geo = anns[i], orbits[i], geos[i]
         win_i, burst_i, geo_shift = finestre[i]
 
+        coh_geo: Optional[float] = None
+        coh_fin: Optional[float] = None
+        coh_corr: Optional[float] = None
+        corr_shift = 0j
         if i == mi:
             img = img_m
             shift, src, psr = 0j, "master", float("inf")
@@ -1697,11 +1893,19 @@ def build_interf_cube(
             chip = read_window(entry, win_i, burst_i, calibra=calibra)
             img = tops_deramp(chip, ann)
 
+            # F46: il residuo lo decide la COERENZA, non il picco di
+            # correlazione. Si parte dal residuo geometrico e si cerca
+            # attorno lo spostamento che massimizza la coerenza mediana con
+            # il master. Il picco di correlazione di fase resta calcolato e
+            # riportato per confronto: sul VH di Giza sbagliava di un pixel
+            # intero e, applicato, peggiorava la coerenza.
             corr_shift, psr = estimate_shift(img_m, img)
-            if abs(corr_shift - geo_shift) <= 2.0 and psr >= 8.0:
-                shift, src = corr_shift, "corr"
-            else:
-                shift, src = geo_shift, "geo"
+            shift, coh_fin, coh_geo = refine_shift_by_coherence(
+                img_m, img, geo_shift, window=cfg.coh_window)
+            src = "geo" if shift == geo_shift else "coer"
+            if abs(corr_shift - geo_shift) <= 3.0 and psr >= 8.0:
+                coh_corr = _coerenza_mediana(apply_shift(img, -corr_shift),
+                                             img_m, cfg.coh_window)
             img = apply_shift(img, -shift)
 
         # --- F02: fase geometrica di riferimento -------------------------
@@ -1723,18 +1927,30 @@ def build_interf_cube(
             "b_perp_m": round(baselines[i].b_perp, 2),
             "b_temp_giorni": round(baselines[i].b_temp, 1),
             "shift_px": [round(shift.real, 3), round(shift.imag, 3)],
+            "shift_geo_px": [round(geo_shift.real, 3), round(geo_shift.imag, 3)],
+            "shift_corr_px": [round(corr_shift.real, 3), round(corr_shift.imag, 3)],
+            "coerenza_geo": None if coh_geo is None else round(coh_geo, 4),
+            "coerenza_corr": None if coh_corr is None else round(coh_corr, 4),
+            "coerenza_finale": None if coh_fin is None else round(coh_fin, 4),
             "offset_finestra_px": [win_i.l0 - win.l0, win_i.p0 - win.p0],
             "burst": burst_i,
             "sorgente_shift": src,
             "psr": None if math.isinf(psr) else round(psr, 2),
         })
         if verbose:
-            print(f"    [{entry.date}] B_perp={baselines[i].b_perp:+8.2f} m  "
-                  f"dt={baselines[i].b_temp:+6.0f} d  "
-                  f"finestra=({win_i.l0 - win.l0:+6d},{win_i.p0 - win.p0:+5d}) px "
-                  f"burst {burst_i}  "
-                  f"residuo=({shift.real:+6.3f},{shift.imag:+6.3f}) px [{src}]"
-                  + ("" if math.isinf(psr) else f"  PSR={psr:5.1f}"))
+            riga = (f"    [{entry.date}] B_perp={baselines[i].b_perp:+8.2f} m  "
+                    f"dt={baselines[i].b_temp:+6.0f} d  "
+                    f"finestra=({win_i.l0 - win.l0:+6d},{win_i.p0 - win.p0:+5d}) px "
+                    f"burst {burst_i}  "
+                    f"residuo=({shift.real:+6.3f},{shift.imag:+6.3f}) px")
+            if coh_fin is None or coh_geo is None:
+                riga += " [master]"
+            else:
+                riga += f"  coer. {coh_geo:.3f} -> {coh_fin:.3f} [{src}]"
+                if coh_corr is not None:
+                    riga += (f"  [corr ({corr_shift.real:+.2f},{corr_shift.imag:+.2f})"
+                             f" PSR {psr:.1f}: {coh_corr:.3f}]")
+            print(riga)
 
     cube = InterfCube(
         y=y, amp_master=amp_m, k_z=k_z, nesz=nesz, calibrato=calibra,
@@ -2529,7 +2745,14 @@ def plateau_heights_from_stack(cfg: Config, geo: Geocoder,
                     "h_xml_master": float(geo.llh(l, q)[2]),
                     "base_alt_letteratura": float(p.base_alt_m)})
 
-    # controllo di consistenza su tutte le date dello stack
+    # controllo di consistenza su tutte le date dello stack.
+    # F49: si confronta la stessa grandezza usata come datum, cioe' la
+    # bilineare locale di CIASCUNA data valutata sulle piramidi. La versione
+    # precedente confrontava la quota del nodo grezzo PIU' VICINO: in una pila
+    # a piu' missioni l'inquadramento cambia da un prodotto all'altro (4500
+    # linee fra S1A e S1C), quindi il nodo piu' vicino non e' lo stesso punto
+    # del terreno e il confronto (39 contro 64 m) segnalava un disaccordo di
+    # datum che non esiste.
     per_data: List[Dict[str, Any]] = []
     # unico posto che NON usa _enu_offset, e di proposito: qui il fattore di
     # longitudine e' quello del centro della scena (PYRAMIDS[0]) mentre lo
@@ -2540,11 +2763,7 @@ def plateau_heights_from_stack(cfg: Config, geo: Geocoder,
     # rileggono soltanto le quote dei nodi.
     for entry in discover_stack(cfg, verbose=False):
         try:
-            root = ET.parse(entry.annotation).getroot()
-            gp = root.findall(".//geolocationGrid//geolocationGridPoint")
-            gl = np.array([float(_txt(g, "latitude")) for g in gp])
-            go = np.array([float(_txt(g, "longitude")) for g in gp])
-            gh = np.array([float(_txt(g, "height")) for g in gp])
+            g_i = Geocoder(parse_annotation(entry.annotation))
         except Exception as ex:                                # pragma: no cover
             if verbose:
                 print(f"      [suolo] {os.path.basename(entry.annotation)}: "
@@ -2552,29 +2771,38 @@ def plateau_heights_from_stack(cfg: Config, geo: Geocoder,
             continue
         row: Dict[str, Any] = {"data": entry.date, "h": [], "d_km": []}
         for p in PYRAMIDS:
-            dist = np.hypot((gl - p.lat) * M_PER_GRADO_LAT, (go - p.lon) * m_lon)
-            k = int(np.argmin(dist))
-            row["h"].append(float(gh[k]))
-            row["d_km"].append(float(dist[k] / 1000.0))
-        per_data.append(row)
+            l, q = g_i.latlon_to_line_pixel(p.lat, p.lon)
+            if not g_i.dentro(l, q):        # fetta che non contiene Giza (F47)
+                row = {}
+                break
+            row["h"].append(float(g_i.llh(l, q)[2]))
+            dist = np.hypot((g_i.lat_nodes - p.lat) * M_PER_GRADO_LAT,
+                            (g_i.lon_nodes - p.lon) * m_lon)
+            row["d_km"].append(float(dist.min() / 1000.0))
+        if row:
+            per_data.append(row)
 
     hh = np.array([r["h"] for r in per_data]) if per_data else None
+    scarto = float((hh.max(axis=0) - hh.min(axis=0)).max()) if hh is not None else 0.0
     if verbose:
         print(f"      quote lette dai {len(per_data)} annotation.xml di "
               f"{cfg.stack_dir}")
         for i, d in enumerate(per):
             if hh is not None:
-                nodo = (f"nodo grezzo {hh[:, i].min():.1f}..{hh[:, i].max():.1f} m "
-                        f"a {np.mean([r['d_km'][i] for r in per_data]):.1f} km")
+                nodo = (f"bilineare sulle {len(per_data)} date "
+                        f"{hh[:, i].min():.1f}..{hh[:, i].max():.1f} m, nodo grezzo "
+                        f"piu' vicino a {np.mean([r['d_km'][i] for r in per_data]):.1f} km")
             else:
-                nodo = "nodo grezzo non disponibile"
+                nodo = "altre date non disponibili"
             print(f"        {d['nome']:<22} bilineare .xml {d['h_xml_master']:6.2f} m"
                   f"  ({nodo}; letteratura {d['base_alt_letteratura']:.0f} m)")
-        if hh is not None and float(hh.max() - hh.min()) > 0.5:
-            print("        ATTENZIONE: le date non concordano sulla quota di "
-                  "riferimento: il layer del suolo non sta su un datum unico")
+        if scarto > 1.0:
+            print(f"        ATTENZIONE: le date non concordano sulla quota di "
+                  f"riferimento (scarto massimo {scarto:.1f} m): il datum del "
+                  f"layer e' quello del master, con questa incertezza")
     return {"per_piramide": per, "per_data": per_data, "n_date": len(per_data),
-            "concordi": bool(hh is not None and float(hh.max() - hh.min()) <= 0.5)}
+            "scarto_fra_date_m": round(scarto, 2),
+            "concordi": bool(scarto <= 1.0)}
 
 
 def _pyramid_local_xy(east: np.ndarray, north: np.ndarray, p: Pyramid,
@@ -3170,7 +3398,9 @@ discover_vh_stack = discover_stack
 
 def run(cfg: Config, verbose: bool = True) -> Dict[str, Any]:
     t_start = time.time()
-    entries = discover_stack(cfg)[: cfg.n_dates]
+    entries = discover_stack(cfg)
+    if cfg.n_dates > 0:                      # F48: 0 = tutte le date presenti
+        entries = entries[: cfg.n_dates]
 
     print(f"\nstack VH: {len(entries)} acquisizioni "
           f"({entries[0].date} -> {entries[-1].date})")
@@ -3556,10 +3786,19 @@ def validate(res: Dict[str, Any], cfg: Config) -> Dict[str, Any]:
         "gamma_p90": round(float(np.percentile(g, 90)), 4),
         "dispersione_quota_sulla_piana_m": (
             round(float(np.std(h[plane])), 1) if plane.sum() > 20 else None),
+        # F50: la deviazione standard e' dominata dagli errori grossolani
+        # (aggancio di un lobo laterale, centinaia di metri) che F27 toglie
+        # solo dal disegno: e' la dispersione robusta (1.4826 * MAD) quella
+        # confrontabile con sigma_h, che descrive il nucleo gaussiano.
+        "dispersione_robusta_sulla_piana_m": (
+            round(float(1.4826 * np.median(np.abs(h[plane] - np.median(h[plane])))), 1)
+            if plane.sum() > 20 else None),
         "sigma_h_teorica_m": round(budget.sigma_h, 1),
-        "nota": ("la dispersione misurata sulla piana e' il controllo empirico "
-                 "della sigma_h teorica: se le due sono dello stesso ordine il "
-                 "budget di precisione e' onesto"),
+        "nota": ("la dispersione ROBUSTA misurata sulla piana e' il controllo "
+                 "empirico della sigma_h teorica: se le due sono dello stesso "
+                 "ordine il budget di precisione e' onesto; la deviazione "
+                 "standard e' riportata per completezza ma e' dominata dalla "
+                 "coda degli errori grossolani (F27)"),
     }
 
     # --- livello 3: struttura contro geometria indipendente -----------------
@@ -5543,6 +5782,23 @@ def selftest() -> int:
           f"traslazione circolare r={c_vecchio:.3f}", end="  ")
     ok &= _esito(c_nuovo > 0.999 and c_vecchio < 0.1)
 
+    # 8) F46: il residuo di coregistrazione scelto per coerenza. Un master
+    #    sintetico con un po' di correlazione spaziale (come uno SLC vero) e
+    #    uno slave che e' il master spostato di d e sporcato di rumore:
+    #    partendo da zero la ricerca deve ritrovare d, e la coerenza deve
+    #    salire rispetto al punto di partenza.
+    from scipy.ndimage import uniform_filter as _uf
+    m8 = (rng.standard_normal((64, 128)) + 1j * rng.standard_normal((64, 128)))
+    m8 = (_uf(m8.real, 3) + 1j * _uf(m8.imag, 3)).astype(np.complex64)
+    d8 = complex(0.75, -0.5)
+    rumore = 0.5 * (rng.standard_normal(m8.shape) + 1j * rng.standard_normal(m8.shape))
+    s8 = (apply_shift(m8, d8) + rumore).astype(np.complex64)
+    sh8, c_fin, c_ini = refine_shift_by_coherence(m8, s8, 0j)
+    print(f"  coerenza (F46): atteso ({d8.real:+.2f},{d8.imag:+.2f}), trovato "
+          f"({sh8.real:+.3f},{sh8.imag:+.3f}), coer. {c_ini:.3f} -> {c_fin:.3f}",
+          end="  ")
+    ok &= _esito(abs(sh8 - d8) <= 0.15 and c_fin > c_ini)
+
     print("\n  " + ("TUTTI GLI AUTOTEST SUPERATI" if ok else "AUTOTEST FALLITI"))
     return 0 if ok else 1
 
@@ -5562,7 +5818,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     ap.add_argument("--platform", default="s1c")
     ap.add_argument("--pol", dest="polarisation", default="vh", choices=["vh", "vv"],
                     help="canale usato per i calcoli (vedere F26 sul costo di VH)")
-    ap.add_argument("--dates", dest="n_dates", type=int, default=11)
+    ap.add_argument("--dates", dest="n_dates", type=int, default=0,
+                    help="F48: quante date usare, dalla piu' vecchia; 0 = tutte "
+                         "quelle presenti in --stack-dir")
     ap.add_argument("--n-elev", type=int, default=257)
     ap.add_argument("--elev-max", dest="elev_max_m", type=float, default=400.0)
     ap.add_argument("--nd", dest="n_d", type=int, default=12)
@@ -5632,7 +5890,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     )
 
     if args.report_only:
-        entries = discover_stack(cfg)[: cfg.n_dates]
+        entries = discover_stack(cfg)
+        if cfg.n_dates > 0:                  # F48: 0 = tutte le date presenti
+            entries = entries[: cfg.n_dates]
         anns = [parse_annotation(e.annotation) for e in entries]
         orbits = [read_orbit(e.annotation) for e in entries]
         tgt = ecef_from_llh(PYRAMIDS[0].lat, PYRAMIDS[0].lon, PYRAMIDS[0].base_alt_m)
