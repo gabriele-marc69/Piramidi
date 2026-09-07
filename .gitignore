@@ -110,3 +110,6 @@ manifest_scarico.json
 !out_piramidi_v03/v03_z_vuoto.npy
 !out_piramidi_v03/v03_sigma_nullo.npy
 !out_piramidi_v03/v03_zeta.npy
+
+# ---- Cartella del sito statico (derivata: la ricostruisce pubblica_sito.py) ----
+sito_giza/
