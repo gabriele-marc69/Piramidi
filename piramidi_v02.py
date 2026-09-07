@@ -3200,7 +3200,10 @@ def polarisation_contrast(cfg: Config, verbose: bool = True) -> Dict[str, Any]:
 
     out: Dict[str, Any] = {}
     for pol in ("vh", "vv"):
-        c = Config(**{**asdict(cfg), "polarisation": pol})
+        # type(cfg) e non Config: cosi' una sottoclasse della configurazione
+        # (piramidi_v03.ConfigV3) sopravvive alla ricostruzione invece di
+        # far cadere il programma sui campi che Config non conosce.
+        c = type(cfg)(**{**asdict(cfg), "polarisation": pol})
         try:
             # verbose=False: l'avviso sulle tracce l'ha gia' dato run()
             entries = discover_stack(c, verbose=False)
@@ -3613,6 +3616,13 @@ def run(cfg: Config, verbose: bool = True) -> Dict[str, Any]:
     print(f"\n  volume finale: {tomo_mag.shape} [azimuth, range, elevazione]")
 
     return {
+        # F51 (usato da piramidi_v03): il cubo interferometrico MULTILOOKED e
+        # il suo k_z, cioe' la coppia (modulo, fase) su cui v03 sintetizza le
+        # sinusoidi verticali. Sono gia' in memoria e pesano pochi MB: esporli
+        # evita a v03 di rileggere i .tiff una seconda volta (60 s su 43 date).
+        # Aggiunta puramente additiva: nessun consumatore esistente cambia.
+        "y_ml": y_ml,
+        "k_ml": k_ml,
         "tomo_mag": tomo_mag,
         "solidity": solidity,
         "coherence": coh,

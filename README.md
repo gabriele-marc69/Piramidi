@@ -15,6 +15,7 @@ ricostruite**, e la ragione è geometrica, non algoritmica.
 
 | file | cosa fa |
 |------|---------|
+| `piramidi_v03.py` | terza versione: da **modulo e fase radiante** di ogni pixel complesso a una **sinusoide verticale per data**, somma, **FFT** (NUFFT di tipo 1) per il profilo in quota, indice **pieno/vuoto** come residuo rispetto alla PSF di un solo diffusore, nuovo 3D interattivo e disegno delle onde sotto Cheope e Chefren |
 | `piramidi_v02.py` | catena principale: stack interferometrico multi-baseline, periodogramma in quota, superficie reale, banco di sub-aperture Doppler, uscita 3D interattiva |
 | `piramidi_v01.py` | prima versione, ancora usata come libreria (lettura annotation, deramping TOPS, blocchi 2-7 delle fonti) |
 | `scarica_ghiza_cdse.py` | scarico selettivo da CDSE: prende i 5 file utili di ogni `.SAFE` invece del prodotto intero (~1.5 GB per data invece di ~8 GB) |
@@ -32,6 +33,11 @@ python piramidi_v02.py --stack-dir DATA_Ghiza --out out_piramidi_v02
 # elenco delle correzioni applicate, e autotest delle convenzioni di segno
 python piramidi_v02.py --fixes
 python piramidi_v02.py --selftest
+
+# v03: sinusoidi da modulo e fase, FFT, pieno/vuoto, nuovo 3D
+python piramidi_v03.py --stack-dir DATA_Ghiza --out out_piramidi_v03
+python piramidi_v03.py --novita
+python piramidi_v03.py --selftest
 ```
 
 I dati **non** stanno nel repository: sono decine di GB. `DATA_Ghiza_riferimento.md`
@@ -81,6 +87,51 @@ di reticolo: i prodotti non condividono la stessa geolocation grid, quindi la
 cella che contiene il ritaglio non è la stessa e i suoi quattro nodi cambiano
 da una data all'altra. Il layer del suolo usa il datum del master, con questa
 incertezza.
+
+## v03 — sinusoidi, FFT e pieno/vuoto
+
+`piramidi_v03.py` riscrive l'inversione nel dominio in cui la si puo'
+disegnare. Da ogni pixel dell'interferogramma multilooked prende **modulo** e
+**fase in radianti**; ogni data diventa una sinusoide lungo la verticale,
+`s_i(z) = A_i cos(φ_i − κ_i z)` con `κ_i = ±k_z,i`; la somma delle sinusoidi
+viene trasformata con una **FFT vera** — le righe stanno a `κ_i`, che non è un
+reticolo uniforme perché le baseline non lo sono, quindi vengono spalmate su
+una griglia uniforme con un nucleo gaussiano e deapodizzate (NUFFT di tipo 1).
+
+Non è un secondo metodo: la somma delle sinusoidi **è** `Re[h(z)]` del
+periodogramma di v02 e il suo inviluppo è `|h(z)|`. La verifica è nei numeri,
+non nell'argomento: profilo identico al calcolo diretto entro `1,5·10⁻⁵`, e
+quota finale identica a quella di v02 entro **1 cm sul 100 % delle celle**,
+passando per lo stesso estimatore. Cambia il costo: 0,7 s contro i ~5 s del
+doppio ciclo sullo stesso volume.
+
+L'indice **pieno/vuoto** è il residuo fra il profilo misurato e la risposta
+attesa da **un solo diffusore** alla quota del picco (stesse ampiezze, stesse
+baseline, fase puramente geometrica), normalizzato dalla dispersione misurata
+sulle celle di sola piana: un z-score con il suo nullo empirico, come F22 per
+`γ`.
+
+| grandezza | valore |
+|---|---|
+| soglia \|z-score\| (p99 del nullo, 3663 celle di piana) | 3,72 |
+| celle anomale — piramidi *vs* piana | 28,4 % *vs* 19,9 % (z = **+3,15**) |
+| solo **vuoto** — piramidi *vs* piana | 0,4 % *vs* 0,3 % (z = +0,33) |
+| solo **pieno** — piramidi *vs* piana | 27,5 % *vs* 19,3 % (z = +3,09) |
+| correlazione dell'eccesso con il layover / ampiezza / coerenza / quota simulata | +0,07 / −0,23 / −0,25 / −0,08 |
+
+Le celle delle piramidi mostrano davvero più energia di quanta la PSF di un
+solo diffusore ne spieghi, e **solo** in eccesso: sul difetto le due
+popolazioni sono indistinguibili. Ma nessuna delle grandezze di controllo
+spiega quell'eccesso — la correlazione più forte vale il 6 % della varianza.
+La lettura corretta è che il modello a un diffusore è troppo semplice per
+celle in layover pieno, non che sotto le piramidi si sia visto qualcosa: con
+`δ_z` = 132 m sotto quella scala non c'è nulla da risolvere.
+
+Le due colonne disegnate a parte (`sezione_onde_sotto_piramidi.png`) mettono
+la sagoma della piramide in scala vera sopra il suolo e, sotto, le 43
+sinusoidi, la loro somma, l'inviluppo e la barra della cella di Rayleigh. Il
+diffusore dominante sta a +9,4 m sopra il riferimento sia per Cheope sia per
+Chefren: appena sopra il deserto, non a metà della piramide.
 
 ## Metodo e fonti
 

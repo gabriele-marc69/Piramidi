@@ -93,3 +93,18 @@ manifest_scarico.json
 # corsa sui dati 2026 scaricati da CDSE (8 date ascendenti, orbita 58)
 !out_ghiza_8date/
 !out_ghiza_8date/**
+
+# ---- Deroga: le uscite di presentazione della corsa v03 ----
+# Della corsa v03 si versiona quello che si guarda -- la pagina 3D, le tre
+# figure, il riassunto JSON e le mappe piccole -- ma NON i quattro volumi da
+# 8,3 MB (profilo, PSF, residuo, z-score): sono ricalcolabili in meno di un
+# secondo dalla FFT e l'uno e' la differenza degli altri due.
+!out_piramidi_v03/tomografia_v03_pieno_vuoto.html
+!out_piramidi_v03/onde_cheope_chefren.png
+!out_piramidi_v03/sezione_onde_sotto_piramidi.png
+!out_piramidi_v03/pieno_vuoto_3d.png
+!out_piramidi_v03/v03_vuoto_max.npy
+!out_piramidi_v03/v03_pieno_max.npy
+!out_piramidi_v03/v03_z_vuoto.npy
+!out_piramidi_v03/v03_sigma_nullo.npy
+!out_piramidi_v03/v03_zeta.npy
