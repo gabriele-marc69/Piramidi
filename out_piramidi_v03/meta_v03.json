@@ -1,5 +1,5 @@
 {
-  "generato": "2026-09-07 14:46:59",
+  "generato": "2026-09-07 16:10:24",
   "programma": "piramidi_v03.py (sintesi sinusoidale + FFT verticale)",
   "metodo": "modulo e fase radiante dell'interferogramma multilooked -> una sinusoide verticale per data -> somma -> FFT non uniforme (NUFFT di tipo 1, nucleo gaussiano) -> profilo in quota -> residuo rispetto alla PSF di un solo diffusore -> z-score sul nullo delle celle di piana",
   "identita_con_v02": "la somma delle sinusoidi e' Re[h(z)] e il suo inviluppo e' |h(z)|: e' lo stesso periodogramma di v02, calcolato per FFT invece che con il doppio ciclo. Non e' una misura indipendente.",
@@ -65,8 +65,8 @@
     "errore_relativo_medio": 1e-06,
     "errore_relativo_max": 1.5e-05,
     "errore_p99": 7e-06,
-    "secondi_fft_tutte_le_celle": 0.75,
-    "secondi_diretto_stimati": 4.6
+    "secondi_fft_tutte_le_celle": 0.824,
+    "secondi_diretto_stimati": 5.1
   },
   "confronto_con_v02": {
     "estimatore": "surface_from_tomogram di v02, picco raffinato a parabola",
@@ -527,9 +527,27 @@
       ]
     }
   ],
+  "campo_onde_pixel_per_pixel": {
+    "descrizione": "F59: per ogni cella della superficie delle piramidi in geometria radar, la sinusoide risultante Re[h(z)] -- la somma delle sinusoidi di quella cella, una per data -- normalizzata al massimo del modulo di quella cella.",
+    "celle": 706,
+    "celle_sopra_soglia": 236,
+    "per_piramide": {
+      "Cheope (Khufu)": 335,
+      "Chefren (Khafre)": 301,
+      "Micerino (Menkaure)": 70
+    },
+    "campioni_per_curva": 129,
+    "sottocampionamento_asse_z": 2,
+    "scala_disegno_m_per_ampiezza_1": 11.0,
+    "quota_picco_mediana_m": 6.25,
+    "quota_simulata_mediana_m": 39.103661
+  },
   "uscite": {
+    "html_v02": "out_piramidi_v03\\tomografia_piramidi_3d.html",
     "onde": "out_piramidi_v03\\onde_cheope_chefren.png",
     "sezione_onde": "out_piramidi_v03\\sezione_onde_sotto_piramidi.png",
+    "onde_3d_png": "out_piramidi_v03\\onde_3d_superficie_piramidi.png",
+    "onde_3d_html": "out_piramidi_v03\\onde_3d_piramidi.html",
     "png_3d": "out_piramidi_v03\\pieno_vuoto_3d.png",
     "html_v03": "out_piramidi_v03\\tomografia_v03_pieno_vuoto.html"
   },
@@ -568,6 +586,11 @@
       "id": "F57",
       "tipo": "uscita",
       "descrizione": "Nuovo grafico 3D del volume pieno/vuoto (HTML interattivo autonomo + PNG): voxel di eccesso in rosso e di difetto in blu, con soglia in z-score regolabile, sopra la superficie misurata e i profili delle piramidi."
+    },
+    {
+      "id": "F59",
+      "tipo": "uscita",
+      "descrizione": "Grafico 3D delle sinusoidi PIXEL PER PIXEL sulla superficie delle piramidi: una curva per cella, alla sua posizione est/nord, che e' la somma delle sinusoidi di quella cella (Re[h(z)]) normalizzata al proprio massimo. La maschera e' quella in GEOMETRIA RADAR, non l'impronta al suolo. Statico in PNG e interattivo in HTML, con la scala orizzontale a cursore perche' lo spostamento e' un artificio di disegno: l'ampiezza di un interferogramma non e' una lunghezza."
     },
     {
       "id": "F58",

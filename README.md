@@ -133,6 +133,22 @@ sinusoidi, la loro somma, l'inviluppo e la barra della cella di Rayleigh. Il
 diffusore dominante sta a +9,4 m sopra il riferimento sia per Cheope sia per
 Chefren: appena sopra il deserto, non a metà della piramide.
 
+### Il campo di onde, pixel per pixel
+
+`onde_3d_superficie_piramidi.png` e `onde_3d_piramidi.html` portano la stessa
+cosa su **tutte** le celle della superficie delle piramidi in geometria radar:
+706 colonne (Cheope 335, Chefren 301, Micerino 70; 236 sopra la soglia di
+qualità), ognuna la sinusoide risultante `Re[h(z)]` del suo pixel,
+normalizzata al proprio massimo e disegnata alla propria posizione est/nord.
+Lo spostamento orizzontale è un artificio — l'ampiezza di un interferogramma
+non è una lunghezza — e nella pagina interattiva è un cursore, così si vede
+che cambiando scala cambia il disegno e non il dato.
+
+Guardato di taglio, il piano dei diffusori dominanti sta appena sopra il
+deserto per tutte e tre le piramidi e non segue in alcun modo il profilo delle
+facce. È l'osservazione centrale di v02 — la pendenza misurato *vs* simulato
+compatibile con zero — disegnata invece che riassunta in un numero.
+
 ## Metodo e fonti
 
 Il programma segue le fonti alla lettera dove sono applicabili — banda di

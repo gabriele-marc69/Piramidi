@@ -202,7 +202,7 @@ BANCO DI SUB-APERTURE DOPPLER  (micro-moto)
     reticolo kappa: 514 celle, passo 3.912e-03 rad/m, |kappa| < 1.0053 rad/m
     finestra in quota: -803 .. +800 m (passo 3.125 m), utile 257 campioni
     nucleo gaussiano: sigma 1.60 celle, troncato a +-8 celle
-      FFT su 8370 celle: 0.73 s  (periodogramma diretto, stimato sullo stesso volume: 4 s)
+      FFT su 8370 celle: 0.82 s  (periodogramma diretto, stimato sullo stesso volume: 5 s)
       errore contro il periodogramma diretto su 240 celle: medio 9.85e-07, massimo 1.46e-05
       quota del picco contro v02 (stesso estimatore): entro 1 cm sul 100.0 % delle celle, scarto massimo 0.0100 m, gamma 6.50e-06
       nullo del residuo: 3663 celle di piana
@@ -222,16 +222,22 @@ BANCO DI SUB-APERTURE DOPPLER  (micro-moto)
       Cheope (Khufu)           cella ( 67,  65)  picco a    +9.4 m  deficit massimo -1.34 sigma a  -303.1 m dal picco
       Chefren (Khafre)         cella ( 44,  34)  picco a    +9.4 m  deficit massimo -0.86 sigma a  -331.2 m dal picco
 
-  [14] nuovo grafico 3D del volume pieno/vuoto
+  [14] campo di onde: una sinusoide risultante per ogni pixel
+      706 celle sulla superficie delle piramidi in geometria radar (236 sopra la soglia di qualita'): Cheope 335, Chefren 301, Micerino 70
+      ogni colonna e' Re[h(z)] della sua cella, 129 campioni (uno ogni 2 dell'asse tomografico)
 
-  [15] uscite v03
+  [15] nuovo grafico 3D del volume pieno/vuoto
+
+  [16] uscite v03
 
   uscite:
     3D interattivo pieno/vuoto (v03)     E:\claude_code\Biondi_Malanga\out_piramidi_v03\tomografia_v03_pieno_vuoto.html
     3D statico pieno/vuoto               E:\claude_code\Biondi_Malanga\out_piramidi_v03\pieno_vuoto_3d.png
+    onde 3D pixel per pixel (interattivo) E:\claude_code\Biondi_Malanga\out_piramidi_v03\onde_3d_piramidi.html
+    onde 3D pixel per pixel (statico)    E:\claude_code\Biondi_Malanga\out_piramidi_v03\onde_3d_superficie_piramidi.png
     sinusoidi, profilo e residuo         E:\claude_code\Biondi_Malanga\out_piramidi_v03\onde_cheope_chefren.png
     onde sotto Cheope e Chefren          E:\claude_code\Biondi_Malanga\out_piramidi_v03\sezione_onde_sotto_piramidi.png
     riassunto JSON di v03                E:\claude_code\Biondi_Malanga\out_piramidi_v03\meta_v03.json
     3D interattivo di v02                E:\claude_code\Biondi_Malanga\out_piramidi_v03\tomografia_piramidi_3d.html
 
-  completato in 73.6 s
+  completato in 85.4 s

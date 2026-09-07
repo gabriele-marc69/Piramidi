@@ -16,8 +16,11 @@ catena esplicita in **quattro passi**, che e' quanto chiesto:
   3. **FFT**: le sinusoidi si sommano e la somma viene trasformata con una
      FFT vera (non con il doppio ciclo di v02) per ottenere il profilo in
      quota, e da questo l'indice **pieno/vuoto**;
-  4. **3D**: un nuovo grafico tridimensionale del volume pieno/vuoto, piu'
-     un disegno a parte delle onde sinusoidali SOTTO Cheope e Chefren.
+  4. **3D**: un nuovo grafico tridimensionale del volume pieno/vuoto, un
+     disegno a parte delle onde sinusoidali SOTTO Cheope e Chefren, e il
+     campo delle sinusoidi risultanti **pixel per pixel** su tutta la
+     superficie delle piramidi -- una curva per cella, alla sua posizione,
+     statica in PNG e interattiva in HTML.
 
 Che cosa e' davvero nuovo, e che cosa no
 ----------------------------------------
@@ -107,6 +110,13 @@ Che cosa dicono i dati (VH, 43 date, master 20260503, DATA_Ghiza)
    riferimento in entrambi i casi, cioe' appena sopra il deserto e non a
    meta' della piramide: la stessa conclusione di v02, vista da un'altra
    parte.
+5. Il campo di onde pixel per pixel (F59) porta la stessa cosa su tutte le
+   706 celle della superficie in geometria radar -- 335 su Cheope, 301 su
+   Chefren, 70 su Micerino, di cui 236 sopra la soglia di qualita'. Guardato
+   di taglio, il piano dei diffusori dominanti sta appena sopra il deserto
+   per tutte e tre le piramidi, e non segue in alcun modo il profilo delle
+   facce: e' l'osservazione del punto 2 della lista di v02, disegnata invece
+   che riassunta in una pendenza.
 
 Novita' di questa versione
 --------------------------
@@ -197,6 +207,14 @@ NOVITA: Tuple[Tuple[str, str, str], ...] = (
      "PNG): voxel di eccesso in rosso e di difetto in blu, con soglia in "
      "z-score regolabile, sopra la superficie misurata e i profili delle "
      "piramidi."),
+    ("F59", "uscita",
+     "Grafico 3D delle sinusoidi PIXEL PER PIXEL sulla superficie delle "
+     "piramidi: una curva per cella, alla sua posizione est/nord, che e' la "
+     "somma delle sinusoidi di quella cella (Re[h(z)]) normalizzata al "
+     "proprio massimo. La maschera e' quella in GEOMETRIA RADAR, non "
+     "l'impronta al suolo. Statico in PNG e interattivo in HTML, con la "
+     "scala orizzontale a cursore perche' lo spostamento e' un artificio di "
+     "disegno: l'ampiezza di un interferogramma non e' una lunghezza."),
     ("F58", "uscita",
      "Disegno a parte delle onde sinusoidali SOTTO Cheope e Chefren: la "
      "sezione verticale con la sagoma della piramide in alto e, sotto il "
@@ -231,11 +249,28 @@ class ConfigV3(Config):
     #: voxel esportati nella nuvola 3D
     max_voxel_v3: int = 24000
 
+    # --- campo di onde pixel per pixel (F59) --------------------------------
+    #: colonne al massimo nel campo di onde; oltre si tengono le piu' luminose
+    onde3d_max_celle: int = 1200
+    #: sottocampionamento dell'asse z per le curve disegnate
+    onde3d_passo_z: int = 2
+    #: quanti metri vale, sul disegno, un'ampiezza normalizzata pari a 1.
+    #: Le celle distano ~14 x 15 m: oltre una decina di metri le colonne si
+    #: sovrappongono e il campo diventa una tenda in cui non si distingue piu'
+    #: la singola sinusoide, che e' proprio quello che il disegno deve mostrare.
+    onde3d_scala_m: float = 11.0
+    #: colonne disegnate nel PNG (l'HTML le porta tutte, con un cursore)
+    onde3d_png_celle: int = 190
+    #: finestra in quota del PNG: l'asse tomografico arriva a +-400 m, ma su
+    #: quella scala le piramidi (130 m) diventano illeggibili
+    onde3d_png_z_max: float = 250.0
+
     out_dir: str = "out_piramidi_v03"
     #: ``html_name`` resta quello di v02 (``build_html`` di v02 lo usa per la
     #: propria pagina): la pagina nuova ha un nome suo, cosi' le due
     #: convivono nella stessa cartella e si possono confrontare.
     html_v3: str = "tomografia_v03_pieno_vuoto.html"
+    html_onde3d: str = "onde_3d_piramidi.html"
 
 
 # ==========================================================================
@@ -779,6 +814,106 @@ def dati_onde(res: Dict[str, Any], idx: Dict[str, Any], g: GrigliaKappa,
 
 
 # ==========================================================================
+# 4b.  Il campo delle onde: una sinusoide risultante per ogni pixel  -- F59
+# ==========================================================================
+
+#: colori delle tre piramidi nei disegni del campo di onde
+COLORI_PIRAMIDE: Tuple[str, str, str] = ("#2563EB", "#16A34A", "#B45309")
+
+
+@dataclass
+class CampoOnde:
+    """Le onde di TUTTI i pixel che cadono sulle piramidi, non due colonne.
+
+    Per ogni cella la curva disegnata e' ``Re[h(z)]``, cioe' esattamente la
+    somma delle sinusoidi di quel pixel (F53): non viene ricalcolata qui, si
+    prende la parte reale del profilo gia' trasformato. L'inviluppo e'
+    ``|h(z)|``. Entrambi sono normalizzati al massimo del modulo di quella
+    cella, quindi ogni colonna si legge sulla propria scala e colonne
+    luminose e colonne deboli restano confrontabili in forma."""
+    east: np.ndarray              # [n] m, posizione ENU della cella
+    north: np.ndarray             # [n]
+    h_ref: np.ndarray             # [n] quota di riferimento .xml della cella
+    z: np.ndarray                 # [n_z] asse delle quote (sottocampionato)
+    onda: np.ndarray              # [n, n_z] Re h / max|h|, in [-1, 1]
+    inviluppo: np.ndarray         # [n, n_z] |h| / max|h|, in [0, 1]
+    piramide: np.ndarray          # [n] indice in PYRAMIDS, -1 se nessuna
+    qualita: np.ndarray           # [n] bool, sopra la soglia di qualita'
+    z_picco: np.ndarray           # [n] quota del diffusore dominante
+    sim_h: np.ndarray             # [n] quota simulata della piramide in quella cella
+    riga: np.ndarray              # [n] indici di cella, per poter risalire
+    colonna: np.ndarray           # [n]
+    passo_z: int                  # sottocampionamento applicato all'asse z
+
+    def __len__(self) -> int:
+        return int(len(self.east))
+
+    def per_piramide(self) -> Dict[str, int]:
+        return {p.name: int(np.count_nonzero(self.piramide == k))
+                for k, p in enumerate(PYRAMIDS)}
+
+
+def campo_onde_piramidi(res: Dict[str, Any], an: Dict[str, Any],
+                        cfg: ConfigV3) -> CampoOnde:
+    """Estrae l'onda risultante di ogni pixel sulla superficie delle piramidi.
+
+    "Superficie delle piramidi" e' la maschera in GEOMETRIA RADAR (``pyr_mask``,
+    F24), non l'impronta al suolo: un punto a quota h si sposta di
+    ``h*cos(theta)`` verso il near range, e usare l'impronta al suolo
+    metterebbe le onde su celle che la piramide non illumina.
+
+    Se le celle superano ``cfg.onde3d_max_celle`` si tengono le piu'
+    luminose, non un campione casuale: la decimazione a caso toglierebbe
+    proprio le colonne su cui la misura ha senso."""
+    h = an["h"]                                   # [n_l, n_p, n_z] complesso
+    z_axis = np.asarray(res["z_axis"], dtype=np.float64)
+    passo = max(1, int(cfg.onde3d_passo_z))
+    kz = np.arange(0, len(z_axis), passo)
+    if kz[-1] != len(z_axis) - 1:
+        kz = np.append(kz, len(z_axis) - 1)
+
+    m = np.asarray(res["pyr_mask"], dtype=bool)
+    ii, jj = np.where(m)
+    if len(ii) > cfg.onde3d_max_celle:
+        forza = res["amp"][ii, jj]
+        tieni = np.argsort(-forza)[: cfg.onde3d_max_celle]
+        ii, jj = ii[tieni], jj[tieni]
+
+    hc = h[ii, jj][:, kz]                         # [n, n_zc]
+    scala = np.max(np.abs(hc), axis=1)
+    scala = np.where(scala < 1e-12, 1e-12, scala)
+    onda = (hc.real / scala[:, None]).astype(np.float32)
+    inviluppo = (np.abs(hc) / scala[:, None]).astype(np.float32)
+
+    # a quale piramide appartiene ogni cella: dalle maschere per piramide di
+    # v02, che portano gia' l'assegnazione fatta in proiezione
+    pir = np.full(len(ii), -1, dtype=np.int8)
+    nomi = [p.name for p in PYRAMIDS]
+    for d in res["sim_per"]:
+        k = nomi.index(d["nome"]) if d["nome"] in nomi else -1
+        if k < 0:
+            continue
+        sel = np.asarray(d["mask"], dtype=bool)[ii, jj]
+        pir[sel] = k
+
+    k_pic = an["indice"]["k_picco"][ii, jj]
+    return CampoOnde(
+        east=res["east"][ii, jj].astype(np.float32),
+        north=res["north"][ii, jj].astype(np.float32),
+        h_ref=res["height_ref"][ii, jj].astype(np.float32),
+        z=z_axis[kz].astype(np.float32),
+        onda=onda,
+        inviluppo=inviluppo,
+        piramide=pir,
+        qualita=np.asarray(res["good"], dtype=bool)[ii, jj],
+        z_picco=z_axis[k_pic].astype(np.float32),
+        sim_h=res["sim_h"][ii, jj].astype(np.float32),
+        riga=ii.astype(np.int32), colonna=jj.astype(np.int32),
+        passo_z=passo,
+    )
+
+
+# ==========================================================================
 # 5.  Disegni: le onde sotto Cheope e Chefren  -- F58
 # ==========================================================================
 
@@ -1032,6 +1167,120 @@ def plot_sezione_onde(onde: List[Dict[str, Any]], res: Dict[str, Any],
         fontsize=11)
     path = os.path.join(cfg.out_dir, "sezione_onde_sotto_piramidi.png")
     fig.savefig(path, dpi=125)
+    plt.close(fig)
+    return path
+
+
+def plot_onde_3d_png(campo: CampoOnde, res: Dict[str, Any], cfg: ConfigV3,
+                     ) -> Optional[str]:
+    """Il campo di onde in 3D, versione statica -- F59.
+
+    Ogni colonna e' la sinusoide risultante di UN pixel: sta alla sua
+    posizione est/nord, si sviluppa lungo la verticale e l'ampiezza e'
+    disegnata come spostamento verso est. Lo spostamento e' un artificio di
+    disegno -- l'ampiezza di un interferogramma non e' una lunghezza -- e il
+    fattore di conversione e' scritto sull'asse."""
+    if len(campo) == 0:
+        return None
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    from mpl_toolkits.mplot3d.art3d import Line3DCollection
+
+    # per il PNG si diradano le colonne: 700 curve sovrapposte su una figura
+    # statica non si leggono, e la pagina interattiva le porta tutte
+    n = len(campo)
+    if n > cfg.onde3d_png_celle:
+        passo = int(math.ceil(n / cfg.onde3d_png_celle))
+        sel = np.zeros(n, dtype=bool)
+        # si dirada per POSIZIONE, non per luminosita': cosi' il campo resta
+        # rappresentativo di tutta l'area invece di addensarsi sugli spigoli
+        ordine = np.lexsort((campo.east, campo.north))
+        sel[ordine[::passo]] = True
+    else:
+        sel = np.ones(n, dtype=bool)
+    idx = np.flatnonzero(sel)
+
+    sc = float(cfg.onde3d_scala_m)
+    # finestra in quota ridotta: sull'asse intero (+-400 m) le piramidi
+    # occupano un sesto della figura e non si vede piu' dove stanno le onde
+    # rispetto a loro. L'HTML porta l'asse intero.
+    kz_png = np.abs(campo.z) <= float(cfg.onde3d_png_z_max)
+    z = campo.z[kz_png].astype(np.float64)
+
+    fig = plt.figure(figsize=(17.0, 8.6), constrained_layout=True)
+    for n_ax, (elev, azim, titolo) in enumerate((
+            (24, -62, "vista da sud-ovest"),
+            (6, -90, "di taglio da sud: il campo come sezione"))):
+        ax = fig.add_subplot(1, 2, n_ax + 1, projection="3d")
+
+        segmenti, colori = [], []
+        for k in idx:
+            x = campo.east[k] + campo.onda[k][kz_png].astype(np.float64) * sc
+            y = np.full(len(z), float(campo.north[k]))
+            zz = float(campo.h_ref[k]) + z
+            punti = np.stack([x, y, zz], axis=1)
+            segmenti.append(punti)
+            p_i = int(campo.piramide[k])
+            colori.append(COLORI_PIRAMIDE[p_i] if 0 <= p_i < len(COLORI_PIRAMIDE)
+                          else "#94A3B8")
+        ax.add_collection3d(Line3DCollection(
+            segmenti, colors=colori, linewidths=0.7, alpha=.55))
+
+        # spigoli delle piramidi, come riferimento
+        spig = []
+        for p in PYRAMIDS:
+            mm = pyramid_mesh(p, res["lat0"], res["lon0"])
+            v = mm["vertices"]
+            for a_i, b_i in ((0, 1), (1, 2), (2, 3), (3, 0),
+                             (0, 4), (1, 4), (2, 4), (3, 4)):
+                spig.append([tuple(v[a_i]), tuple(v[b_i])])
+        ax.add_collection3d(Line3DCollection(spig, colors="#7C2D12", lw=1.2))
+
+        # Quota del diffusore dominante, ma solo per le celle sopra la soglia
+        # di qualita' e dentro la finestra disegnata: matplotlib non taglia
+        # gli artisti 3D ai limiti degli assi, quindi i picchi delle celle
+        # decorrelate (che stanno ovunque sui +-400 m) uscivano dalla scatola
+        # e sembravano detriti sparsi sulla figura.
+        vis = (campo.qualita[idx]
+               & (np.abs(campo.z_picco[idx]) <= float(cfg.onde3d_png_z_max)))
+        if vis.any():
+            ax.scatter(campo.east[idx][vis], campo.north[idx][vis],
+                       (campo.h_ref[idx] + campo.z_picco[idx])[vis],
+                       s=7, color="#0F172A", alpha=.75, linewidths=0)
+
+        ax.set_xlim(float(campo.east.min()) - 2 * sc,
+                    float(campo.east.max()) + 2 * sc)
+        ax.set_ylim(float(campo.north.min()) - 20, float(campo.north.max()) + 20)
+        ax.set_zlim(float((campo.h_ref + z[0]).min()) - 10,
+                    max(float((campo.h_ref + z[-1]).max()),
+                        max(p.base_alt_m + p.height_m for p in PYRAMIDS)) + 20)
+        ax.set_xlabel(f"est [m]  (ampiezza 1 = {sc:.0f} m)")
+        ax.set_zlabel("quota [m]")
+        ax.view_init(elev=elev, azim=azim)
+        ax.set_title(titolo, fontsize=10)
+        if n_ax == 0:
+            ax.set_ylabel("nord [m]")
+        else:
+            ax.set_yticks([])
+
+    conteggi = campo.per_piramide()
+    eti = ", ".join(f"{nome.split()[0]} {conteggi[nome]}" for nome in conteggi)
+    budget: TomoBudget = res["budget"]
+    fig.suptitle(
+        "Le sinusoidi risultanti, pixel per pixel, sulla superficie delle "
+        "piramidi\n"
+        f"{len(idx)} colonne disegnate su {len(campo)} celle ({eti}); ogni "
+        f"curva e' Re[h(z)] di UNA cella, cioe' la somma delle sue "
+        f"{len(res['dates'])} sinusoidi, normalizzata al proprio massimo\n"
+        f"punti neri = diffusore dominante delle sole celle sopra soglia; "
+        f"quota mostrata +-"
+        f"{cfg.onde3d_png_z_max:.0f} m sui +-{abs(float(campo.z[0])):.0f} m "
+        f"dell'asse tomografico; delta_z = {budget.delta_z_vertical:.0f} m, "
+        "quindi la forma verticale di ogni colonna e' la PSF dell'array",
+        fontsize=10)
+    path = os.path.join(cfg.out_dir, "onde_3d_superficie_piramidi.png")
+    fig.savefig(path, dpi=120)
     plt.close(fig)
     return path
 
@@ -1646,6 +1895,429 @@ def build_html_v03(res: Dict[str, Any], idx: Dict[str, Any], cfg: ConfigV3,
     return path
 
 
+def _testa(titolo: str) -> str:
+    """La stessa intestazione HTML di ``_HTML_TESTA`` con un titolo diverso.
+
+    Un ``replace`` e non un ``format``: il blocco contiene CSS, e le graffe
+    del CSS farebbero saltare qualunque formattazione a segnaposto."""
+    vecchio = ("<title>Giza v03 - volume pieno/vuoto dalla FFT delle "
+               "sinusoidi</title>")
+    assert vecchio in _HTML_TESTA
+    return _HTML_TESTA.replace(vecchio, f"<title>{titolo}</title>")
+
+
+def build_html_onde3d(campo: CampoOnde, res: Dict[str, Any], cfg: ConfigV3,
+                      ) -> Optional[str]:
+    """Pagina 3D interattiva del campo di onde, pixel per pixel -- F59.
+
+    Porta TUTTE le colonne (il PNG ne dirada), con i cursori per quante
+    disegnarne, per la scala orizzontale e per l'esagerazione verticale. La
+    scala orizzontale e' un cursore proprio perche' e' un artificio: chi
+    guarda deve poter vedere che cambiandola cambia l'aspetto del campo e non
+    il dato."""
+    if len(campo) == 0:
+        return None
+
+    # ordine spaziale: diradare seguendo questo indice tiene il campo
+    # rappresentativo di tutta l'area invece di addensarlo su una fascia
+    ordine = np.lexsort((campo.east, campo.north)).astype(np.int32)
+    budget: TomoBudget = res["budget"]
+
+    colonne = np.stack([
+        np.round(campo.east, 1), np.round(campo.north, 1),
+        np.round(campo.h_ref, 1), campo.piramide.astype(np.float32),
+        campo.qualita.astype(np.float32), np.round(campo.z_picco, 1),
+        np.round(campo.sim_h, 1),
+    ], axis=1)
+
+    piramidi = []
+    for p in PYRAMIDS:
+        m = pyramid_mesh(p, res["lat0"], res["lon0"])
+        piramidi.append({
+            "nome": p.name,
+            "v": [[round(c, 1) for c in v] for v in m["vertices"]],
+            "spigoli": [[0, 1], [1, 2], [2, 3], [3, 0],
+                        [0, 4], [1, 4], [2, 4], [3, 4]],
+        })
+
+    payload = {
+        "z": np.round(campo.z, 2).tolist(),
+        "colonne": colonne.tolist(),
+        "onda": np.round(campo.onda, 3).tolist(),
+        "inviluppo": np.round(campo.inviluppo, 3).tolist(),
+        "ordine": ordine.tolist(),
+        "piramidi": piramidi,
+        "colori": list(COLORI_PIRAMIDE),
+        "conteggi": campo.per_piramide(),
+        "meta": {
+            "date": len(res["dates"]),
+            "master": res["master_date"],
+            "polarizzazione": cfg.polarisation.upper(),
+            "celle": len(campo),
+            "campioni_z": int(len(campo.z)),
+            "passo_z": round(float(campo.z[1] - campo.z[0]), 3),
+            "sottocamp": campo.passo_z,
+            "scala_m": float(cfg.onde3d_scala_m),
+            "delta_z": round(float(budget.delta_z_vertical), 1),
+            "sigma_h": round(float(budget.sigma_h), 1),
+            "qualita": int(np.count_nonzero(campo.qualita)),
+        },
+    }
+    dati = json.dumps(payload, ensure_ascii=False, separators=(",", ":"),
+                      default=float).replace("</", "<\\/")
+
+    c = payload["conteggi"]
+    righe_conteggi = "".join(
+        f"<tr><td><span class='pastiglia' style='background:{COLORI_PIRAMIDE[k]}'>"
+        f"</span> {p.name}</td><td class='v'>{c.get(p.name, 0)}</td></tr>"
+        for k, p in enumerate(PYRAMIDS))
+
+    corpo = f"""
+<header>
+  <h1>Giza v03 &mdash; le sinusoidi risultanti, pixel per pixel, sulla
+  superficie delle piramidi</h1>
+  <p>Ogni curva verticale e' <b>una cella</b>: la somma delle sue
+  {len(res['dates'])} sinusoidi, una per data, cioe' <code>Re h(z)</code>
+  normalizzato al massimo di quella cella. Sta alla propria posizione est/nord
+  e si sviluppa lungo la quota; l'ampiezza e' disegnata come spostamento verso
+  est, ed e' un <b>artificio di disegno</b> &mdash; il cursore della scala e'
+  li' per farlo vedere. La forma verticale di ogni colonna e' la PSF
+  dell'array: <code>delta_z</code> = {budget.delta_z_vertical:.0f} m.</p>
+</header>
+<main>
+  <div id="scena"><canvas id="tela"></canvas></div>
+  <aside>
+    <h2>Quali piramidi</h2>
+    {"".join(f'<label class="riga"><input type="checkbox" class="c_pir" data-k="{k}" checked> <span class="pastiglia" style="background:{COLORI_PIRAMIDE[k]}"></span> {p.name}</label>' for k, p in enumerate(PYRAMIDS))}
+    <label class="riga"><input type="checkbox" id="c_qual"> solo celle sopra la soglia di qualita'</label>
+
+    <h2>Che cosa disegnare</h2>
+    <label class="riga"><input type="checkbox" id="c_onda" checked> somma delle sinusoidi</label>
+    <label class="riga"><input type="checkbox" id="c_inv"> inviluppo |h(z)|</label>
+    <label class="riga"><input type="checkbox" id="c_pic" checked> diffusore dominante (solo celle sopra soglia)</label>
+    <label class="riga"><input type="checkbox" id="c_wire" checked> spigoli delle piramidi</label>
+    <label class="riga"><input type="checkbox" id="c_quota"> colora per quota del picco</label>
+
+    <h2>Scala e vista</h2>
+    <div class="cursore">
+      colonne disegnate = <b id="e_ncol"></b>
+      <input type="range" id="s_ncol" min="20" max="{len(campo)}" step="10">
+    </div>
+    <div class="cursore">
+      ampiezza 1 = <b id="e_scala"></b> m sul disegno
+      <input type="range" id="s_scala" min="4" max="90" step="1">
+    </div>
+    <div class="cursore">
+      quota mostrata da <b id="e_zmin"></b> m
+      <input type="range" id="s_zmin" min="{int(campo.z[0])}" max="0" step="5">
+    </div>
+    <div class="cursore">
+      quota mostrata fino a <b id="e_zmax"></b> m
+      <input type="range" id="s_zmax" min="0" max="{int(campo.z[-1])}" step="5">
+    </div>
+    <div class="cursore">
+      esagerazione verticale = <b id="e_vex"></b>x
+      <input type="range" id="s_vex" min="0.5" max="4" step="0.1">
+    </div>
+    <button id="b_reset">rimetti la vista a zero</button>
+
+    <h2>Celle</h2>
+    <table>{righe_conteggi}
+      <tr><td>totale sulle piramidi</td><td class="v">{len(campo)}</td></tr>
+      <tr><td>di cui sopra soglia</td><td class="v">{int(np.count_nonzero(campo.qualita))}</td></tr>
+      <tr><td>campioni per curva</td><td class="v">{len(campo.z)}</td></tr>
+    </table>
+
+    <div class="nota">Le colonne sono <b>tutte normalizzate al proprio
+    massimo</b>: la loro altezza sul disegno non dice quanto una cella e'
+    luminosa, dice che forma ha il suo profilo. Colonne di celle deboli hanno
+    la stessa ampiezza di quelle forti, ed e' voluto &mdash; serve a
+    confrontare le forme, non le intensita'.</div>
+    <div class="nota">La maschera e' quella in <b>geometria radar</b>: un
+    punto a quota h si sposta di h&middot;cos(theta) verso il near range,
+    quindi le celle che portano la piramide non sono quelle della sua
+    impronta al suolo.</div>
+  </aside>
+</main>
+<footer id="pie"></footer>
+"""
+
+    script = """
+<script>
+(function () {
+  "use strict";
+  var D = DATI_QUI;
+  var tela = document.getElementById("tela");
+  var ctx = tela.getContext("2d");
+  var vista = { yaw: -0.62, pitch: 0.36, zoom: 1.0, panx: 0, pany: 0 };
+  var iniziale = JSON.parse(JSON.stringify(vista));
+  // 200 colonne di partenza e non tutte: con 700 curve sovrapposte il campo
+  // diventa una tenda opaca in cui non si distingue piu' la singola
+  // sinusoide, che e' quello che questa pagina deve far vedere. Il cursore
+  // le porta tutte per chi le vuole.
+  var stato = { ncol: Math.min(D.colonne.length, 200),
+                scala: D.meta.scala_m, vex: 1.0,
+                zmin: D.z[0], zmax: D.z[D.z.length - 1] };
+
+  var cx = 0, cy = 0, cz = 0, raggio = 1, zmin = 0, zmax = 1, hmed = 0;
+  (function () {
+    var xs = [], ys = [], zs = [], sh = 0;
+    D.colonne.forEach(function (c) {
+      xs.push(c[0]); ys.push(c[1]); sh += c[2];
+      zs.push(c[2] + D.z[0]); zs.push(c[2] + D.z[D.z.length - 1]);
+    });
+    hmed = D.colonne.length ? sh / D.colonne.length : 0;
+    D.piramidi.forEach(function (p) {
+      p.v.forEach(function (v) { xs.push(v[0]); ys.push(v[1]); zs.push(v[2]); });
+    });
+    var mn = function (a) { return Math.min.apply(null, a); };
+    var mx = function (a) { return Math.max.apply(null, a); };
+    cx = 0.5 * (mn(xs) + mx(xs)); cy = 0.5 * (mn(ys) + mx(ys));
+    zmin = mn(zs); zmax = mx(zs); cz = 0.5 * (zmin + zmax);
+    raggio = Math.max(mx(xs) - mn(xs), mx(ys) - mn(ys), 1);
+  })();
+
+  var pmin = Infinity, pmax = -Infinity;
+  D.colonne.forEach(function (c) {
+    var q = c[2] + c[5];
+    if (q < pmin) { pmin = q; }
+    if (q > pmax) { pmax = q; }
+  });
+
+  function coloreQuota(q) {
+    var t = (pmax > pmin) ? (q - pmin) / (pmax - pmin) : 0.5;
+    var r = Math.round(30 + 200 * t), g = Math.round(90 + 60 * (1 - t));
+    var b = Math.round(220 - 170 * t);
+    return "rgb(" + r + "," + g + "," + b + ")";
+  }
+
+  var W = 0, H = 0, dpr = 1;
+  function misura() {
+    dpr = window.devicePixelRatio || 1;
+    var r = tela.parentNode.getBoundingClientRect();
+    W = Math.max(320, Math.floor(r.width));
+    H = Math.max(320, Math.floor(r.height));
+    tela.width = Math.floor(W * dpr);
+    tela.height = Math.floor(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  var cyaw = 1, syaw = 0, cpit = 1, spit = 0, sfac = 1;
+  function preparaCamera() {
+    cyaw = Math.cos(vista.yaw); syaw = Math.sin(vista.yaw);
+    cpit = Math.cos(vista.pitch); spit = Math.sin(vista.pitch);
+    sfac = (Math.min(W, H) * 0.80 / raggio) * vista.zoom;
+    // il centro verticale segue la finestra in quota scelta: altrimenti
+    // tagliando l'asse la scena resta appesa in un angolo dello schermo
+    cz = hmed + 0.5 * (stato.zmin + stato.zmax);
+  }
+  var px = 0, py = 0, pd = 0;
+  function proietta(x, y, z) {
+    var dx = x - cx, dy = y - cy, dz = (z - cz) * stato.vex;
+    var X = dx * cyaw - dy * syaw;
+    var Y = dx * syaw + dy * cyaw;
+    var Y2 = Y * cpit - dz * spit;
+    var Z2 = Y * spit + dz * cpit;
+    px = W / 2 + X * sfac + vista.panx;
+    py = H / 2 - Z2 * sfac + vista.pany;
+    pd = Y2;
+  }
+
+  function selezione() {
+    var vis = [];
+    var attive = {};
+    var box = document.querySelectorAll(".c_pir");
+    for (var i = 0; i < box.length; i++) {
+      attive[box[i].getAttribute("data-k")] = box[i].checked;
+    }
+    var soloQ = document.getElementById("c_qual").checked;
+    for (var k = 0; k < D.ordine.length; k++) {
+      var idx = D.ordine[k];
+      var c = D.colonne[idx];
+      if (!attive[String(c[3])]) { continue; }
+      if (soloQ && c[4] < 0.5) { continue; }
+      vis.push(idx);
+    }
+    if (vis.length > stato.ncol) {
+      var passo = vis.length / stato.ncol;
+      var fuori = [];
+      for (var j = 0; j < stato.ncol; j++) {
+        fuori.push(vis[Math.floor(j * passo)]);
+      }
+      return fuori;
+    }
+    return vis;
+  }
+
+  function disegna() {
+    preparaCamera();
+    ctx.clearRect(0, 0, W, H);
+    ctx.fillStyle = "#FFFFFF";
+    ctx.fillRect(0, 0, W, H);
+
+    var vOnda = document.getElementById("c_onda").checked;
+    var vInv = document.getElementById("c_inv").checked;
+    var vPic = document.getElementById("c_pic").checked;
+    var vWire = document.getElementById("c_wire").checked;
+    var perQuota = document.getElementById("c_quota").checked;
+    var sel = selezione();
+
+    // ordinamento per profondita' della base: le colonne davanti coprono
+    // quelle dietro, come deve essere
+    var chiavi = new Array(sel.length);
+    for (var i = 0; i < sel.length; i++) {
+      var c0 = D.colonne[sel[i]];
+      proietta(c0[0], c0[1], c0[2]);
+      chiavi[i] = [pd, sel[i]];
+    }
+    chiavi.sort(function (a, b) { return b[0] - a[0]; });
+
+    // primo e ultimo campione dentro la finestra in quota scelta
+    var t0 = 0, t1 = D.z.length - 1;
+    while (t0 < t1 && D.z[t0] < stato.zmin) { t0++; }
+    while (t1 > t0 && D.z[t1] > stato.zmax) { t1--; }
+
+    for (var m = 0; m < chiavi.length; m++) {
+      var id = chiavi[m][1];
+      var c = D.colonne[id];
+      var col = perQuota ? coloreQuota(c[2] + c[5])
+                         : (D.colori[c[3]] || "#94A3B8");
+      if (vInv) {
+        var inv = D.inviluppo[id];
+        ctx.strokeStyle = col;
+        ctx.globalAlpha = 0.22;
+        ctx.lineWidth = 1.0;
+        for (var s = -1; s <= 1; s += 2) {
+          ctx.beginPath();
+          for (var t = t0; t <= t1; t++) {
+            proietta(c[0] + s * inv[t] * stato.scala, c[1], c[2] + D.z[t]);
+            if (t === t0) { ctx.moveTo(px, py); } else { ctx.lineTo(px, py); }
+          }
+          ctx.stroke();
+        }
+      }
+      if (vOnda) {
+        var on = D.onda[id];
+        ctx.strokeStyle = col;
+        ctx.globalAlpha = 0.72;
+        ctx.lineWidth = 0.9;
+        ctx.beginPath();
+        for (var u = t0; u <= t1; u++) {
+          proietta(c[0] + on[u] * stato.scala, c[1], c[2] + D.z[u]);
+          if (u === t0) { ctx.moveTo(px, py); } else { ctx.lineTo(px, py); }
+        }
+        ctx.stroke();
+      }
+      // il picco si disegna solo dove significa qualcosa: sulle celle sotto
+      // la soglia di qualita' l'argmax e' rumore, e sparso su tutto l'asse
+      // sembrerebbe una nuvola di bersagli
+      if (vPic && c[4] >= 0.5 && c[5] >= stato.zmin && c[5] <= stato.zmax) {
+        proietta(c[0], c[1], c[2] + c[5]);
+        ctx.globalAlpha = 0.9;
+        ctx.fillStyle = "#0F172A";
+        ctx.fillRect(px - 1.8, py - 1.8, 3.6, 3.6);
+      }
+    }
+    ctx.globalAlpha = 1.0;
+
+    if (vWire) {
+      ctx.strokeStyle = "#7C2D12";
+      ctx.lineWidth = 1.3;
+      D.piramidi.forEach(function (p) {
+        ctx.beginPath();
+        p.spigoli.forEach(function (sp) {
+          proietta(p.v[sp[0]][0], p.v[sp[0]][1], p.v[sp[0]][2]);
+          var ax = px, ay = py;
+          proietta(p.v[sp[1]][0], p.v[sp[1]][1], p.v[sp[1]][2]);
+          ctx.moveTo(ax, ay); ctx.lineTo(px, py);
+        });
+        ctx.stroke();
+      });
+    }
+
+    document.getElementById("e_ncol").textContent =
+      chiavi.length + " di " + D.colonne.length;
+  }
+
+  var trascina = false, lx = 0, ly = 0;
+  tela.addEventListener("mousedown", function (ev) {
+    trascina = true; lx = ev.clientX; ly = ev.clientY;
+    tela.classList.add("trascina");
+  });
+  window.addEventListener("mouseup", function () {
+    trascina = false; tela.classList.remove("trascina");
+  });
+  window.addEventListener("mousemove", function (ev) {
+    if (!trascina) { return; }
+    if (ev.shiftKey) {
+      vista.panx += ev.clientX - lx; vista.pany += ev.clientY - ly;
+    } else {
+      vista.yaw += (ev.clientX - lx) * 0.006;
+      vista.pitch += (ev.clientY - ly) * 0.006;
+      vista.pitch = Math.max(-1.45, Math.min(1.45, vista.pitch));
+    }
+    lx = ev.clientX; ly = ev.clientY;
+    disegna();
+  });
+  tela.addEventListener("wheel", function (ev) {
+    ev.preventDefault();
+    vista.zoom *= (ev.deltaY < 0) ? 1.1 : 1 / 1.1;
+    vista.zoom = Math.max(0.25, Math.min(12, vista.zoom));
+    disegna();
+  }, { passive: false });
+
+  function lega(id, campo, mostra, fmt) {
+    var el = document.getElementById(id);
+    var et = document.getElementById(mostra);
+    el.value = stato[campo];
+    if (et && fmt) { et.textContent = fmt(stato[campo]); }
+    el.addEventListener("input", function () {
+      stato[campo] = parseFloat(el.value);
+      if (et && fmt) { et.textContent = fmt(stato[campo]); }
+      disegna();
+    });
+  }
+  lega("s_ncol", "ncol", null, null);
+  lega("s_scala", "scala", "e_scala", function (v) { return v.toFixed(0); });
+  lega("s_vex", "vex", "e_vex", function (v) { return v.toFixed(1); });
+  lega("s_zmin", "zmin", "e_zmin", function (v) { return v.toFixed(0); });
+  lega("s_zmax", "zmax", "e_zmax", function (v) { return v.toFixed(0); });
+  var tutte = document.querySelectorAll(".c_pir, #c_qual, #c_onda, #c_inv, "
+    + "#c_pic, #c_wire, #c_quota");
+  for (var q = 0; q < tutte.length; q++) {
+    tutte[q].addEventListener("change", disegna);
+  }
+  document.getElementById("b_reset").addEventListener("click", function () {
+    vista = JSON.parse(JSON.stringify(iniziale));
+    disegna();
+  });
+  window.addEventListener("resize", function () { misura(); disegna(); });
+
+  document.getElementById("pie").textContent =
+    "trascina per ruotare, shift+trascina per spostare, rotella per lo zoom  |  "
+    + D.meta.celle + " celle sulle piramidi, " + D.meta.campioni_z
+    + " campioni per curva (asse z a passo " + D.meta.passo_z + " m, uno ogni "
+    + D.meta.sottocamp + " dell'asse tomografico)  |  " + D.meta.date
+    + " date, master " + D.meta.master + ", " + D.meta.polarizzazione
+    + "  |  delta_z = " + D.meta.delta_z + " m, sigma_h = " + D.meta.sigma_h + " m";
+
+  misura();
+  disegna();
+})();
+</script>
+</body>
+</html>
+"""
+
+    html = (_testa("Giza v03 - sinusoidi pixel per pixel sulle piramidi")
+            + corpo + script.replace("DATI_QUI", dati))
+    os.makedirs(cfg.out_dir, exist_ok=True)
+    path = os.path.join(cfg.out_dir, cfg.html_onde3d)
+    with open(path, "w", encoding="utf-8") as fh:
+        fh.write(html)
+    return path
+
+
 # ==========================================================================
 # 7.  Pipeline v03
 # ==========================================================================
@@ -1802,7 +2474,8 @@ def _pulisci(v: Any) -> Any:
 
 
 def save_outputs_v03(res: Dict[str, Any], an: Dict[str, Any], cfg: ConfigV3,
-                     onde: List[Dict[str, Any]], percorsi: Dict[str, str]) -> str:
+                     onde: List[Dict[str, Any]], percorsi: Dict[str, str],
+                     campo: Optional[CampoOnde] = None) -> str:
     """Matrici e riassunto JSON della parte v03."""
     os.makedirs(cfg.out_dir, exist_ok=True)
     idx = an["indice"]
@@ -1869,6 +2542,21 @@ def save_outputs_v03(res: Dict[str, Any], an: Dict[str, Any], cfg: ConfigV3,
             "kappa_per_data_rad_m": _pulisci(d["kappa"]),
             "b_perp_per_data_m": _pulisci(d["b_perp"]),
         } for d in onde],
+        "campo_onde_pixel_per_pixel": (None if campo is None else {
+            "descrizione": (
+                "F59: per ogni cella della superficie delle piramidi in "
+                "geometria radar, la sinusoide risultante Re[h(z)] -- la "
+                "somma delle sinusoidi di quella cella, una per data -- "
+                "normalizzata al massimo del modulo di quella cella."),
+            "celle": len(campo),
+            "celle_sopra_soglia": int(np.count_nonzero(campo.qualita)),
+            "per_piramide": campo.per_piramide(),
+            "campioni_per_curva": int(len(campo.z)),
+            "sottocampionamento_asse_z": campo.passo_z,
+            "scala_disegno_m_per_ampiezza_1": cfg.onde3d_scala_m,
+            "quota_picco_mediana_m": _pulisci(float(np.median(campo.z_picco))),
+            "quota_simulata_mediana_m": _pulisci(float(np.median(campo.sim_h))),
+        }),
         "uscite": percorsi,
         "novita": [{"id": i, "tipo": t, "descrizione": d} for i, t, d in NOVITA],
         "avvertenza": (
@@ -1930,16 +2618,33 @@ def run_v03(cfg: ConfigV3, verbose: bool = True,
     if p:
         percorsi["sezione_onde"] = p
 
-    print("\n  [14] nuovo grafico 3D del volume pieno/vuoto")
+    print("\n  [14] campo di onde: una sinusoide risultante per ogni pixel")
+    campo = campo_onde_piramidi(res, an, cfg)
+    conteggi = campo.per_piramide()
+    print(f"      {len(campo)} celle sulla superficie delle piramidi in "
+          f"geometria radar ({int(np.count_nonzero(campo.qualita))} sopra la "
+          "soglia di qualita'): "
+          + ", ".join(f"{n.split()[0]} {v}" for n, v in conteggi.items()))
+    print(f"      ogni colonna e' Re[h(z)] della sua cella, {len(campo.z)} "
+          f"campioni (uno ogni {campo.passo_z} dell'asse tomografico)")
+    p_o3 = plot_onde_3d_png(campo, res, cfg)
+    if p_o3:
+        percorsi["onde_3d_png"] = p_o3
+    p_o3 = build_html_onde3d(campo, res, cfg)
+    if p_o3:
+        percorsi["onde_3d_html"] = p_o3
+
+    print("\n  [15] nuovo grafico 3D del volume pieno/vuoto")
     percorsi["png_3d"] = plot_3d_png(res, an["indice"], cfg, an["bilancio"])
     percorsi["html_v03"] = build_html_v03(res, an["indice"], cfg,
                                           an["bilancio"], an["fft"], onde)
 
-    print("\n  [15] uscite v03")
-    percorsi["meta_v03"] = save_outputs_v03(res, an, cfg, onde, percorsi)
+    print("\n  [16] uscite v03")
+    percorsi["meta_v03"] = save_outputs_v03(res, an, cfg, onde, percorsi,
+                                            campo)
 
     return {"res": res, "valid": valid, "an": an, "onde": onde,
-            "percorsi": percorsi}
+            "campo": campo, "percorsi": percorsi}
 
 
 # ==========================================================================
@@ -2112,6 +2817,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     etichette = {
         "html_v03": "3D interattivo pieno/vuoto (v03)",
         "png_3d": "3D statico pieno/vuoto",
+        "onde_3d_html": "onde 3D pixel per pixel (interattivo)",
+        "onde_3d_png": "onde 3D pixel per pixel (statico)",
         "onde": "sinusoidi, profilo e residuo",
         "sezione_onde": "onde sotto Cheope e Chefren",
         "meta_v03": "riassunto JSON di v03",
