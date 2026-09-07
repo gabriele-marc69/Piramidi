@@ -207,6 +207,15 @@ NOVITA: Tuple[Tuple[str, str, str], ...] = (
      "PNG): voxel di eccesso in rosso e di difetto in blu, con soglia in "
      "z-score regolabile, sopra la superficie misurata e i profili delle "
      "piramidi."),
+    ("F60", "uscita",
+     "Una pagina per ciascuna piramide, con le SUE sole colonne e le forme "
+     "d'onda calcolate disegnate dentro la pagina in SVG: la somma delle "
+     "sinusoidi della colonna rappresentativa con il suo inviluppo, e la "
+     "media INCOERENTE dei moduli su tutte le celle di quella piramide (la "
+     "media coerente le annullerebbe, perche' le fasi fra celle sono "
+     "scorrelate). Nessun file esterno e nessuna libreria: la pagina si "
+     "regge da sola. Il renderer 3D e' lo stesso della pagina d'insieme, "
+     "filtrato -- due copie divergerebbero."),
     ("F59", "uscita",
      "Grafico 3D delle sinusoidi PIXEL PER PIXEL sulla superficie delle "
      "piramidi: una curva per cella, alla sua posizione est/nord, che e' la "
@@ -252,8 +261,12 @@ class ConfigV3(Config):
     # --- campo di onde pixel per pixel (F59) --------------------------------
     #: colonne al massimo nel campo di onde; oltre si tengono le piu' luminose
     onde3d_max_celle: int = 1200
-    #: sottocampionamento dell'asse z per le curve disegnate
-    onde3d_passo_z: int = 2
+    #: Sottocampionamento dell'asse z per le curve disegnate. A 3 restano 86
+    #: campioni su 800 m, cioe' un punto ogni 9,4 m: il lobo principale della
+    #: PSF e' largo 132 m, quindi la forma non cambia, e la pagina pesa un
+    #: terzo in meno -- il caricamento diretto su un hosting statico accetta
+    #: un lotto per volta e quel terzo conta.
+    onde3d_passo_z: int = 3
     #: quanti metri vale, sul disegno, un'ampiezza normalizzata pari a 1.
     #: Le celle distano ~14 x 15 m: oltre una decina di metri le colonne si
     #: sovrappongono e il campo diventa una tenda in cui non si distingue piu'
@@ -841,6 +854,7 @@ class CampoOnde:
     qualita: np.ndarray           # [n] bool, sopra la soglia di qualita'
     z_picco: np.ndarray           # [n] quota del diffusore dominante
     sim_h: np.ndarray             # [n] quota simulata della piramide in quella cella
+    amp: np.ndarray               # [n] ampiezza del master (sigma0 o DN)
     riga: np.ndarray              # [n] indici di cella, per poter risalire
     colonna: np.ndarray           # [n]
     passo_z: int                  # sottocampionamento applicato all'asse z
@@ -851,6 +865,28 @@ class CampoOnde:
     def per_piramide(self) -> Dict[str, int]:
         return {p.name: int(np.count_nonzero(self.piramide == k))
                 for k, p in enumerate(PYRAMIDS)}
+
+    def filtra(self, sel: np.ndarray) -> "CampoOnde":
+        """Un nuovo campo con le sole colonne selezionate (stesso asse z)."""
+        sel = np.asarray(sel, dtype=bool)
+        return CampoOnde(
+            east=self.east[sel], north=self.north[sel], h_ref=self.h_ref[sel],
+            z=self.z, onda=self.onda[sel], inviluppo=self.inviluppo[sel],
+            piramide=self.piramide[sel], qualita=self.qualita[sel],
+            z_picco=self.z_picco[sel], sim_h=self.sim_h[sel],
+            amp=self.amp[sel], riga=self.riga[sel], colonna=self.colonna[sel],
+            passo_z=self.passo_z)
+
+    def rappresentativa(self) -> int:
+        """Indice della colonna piu' luminosa fra quelle di qualita'.
+
+        E' la stessa regola delle figure a due colonne: si preferisce una
+        cella sopra la soglia, e solo se non ce ne sono si ripiega sul
+        massimo di ampiezza -- dichiarandolo."""
+        if len(self) == 0:
+            return -1
+        scelta = self.qualita if self.qualita.any() else np.ones(len(self), bool)
+        return int(np.argmax(np.where(scelta, self.amp, -np.inf)))
 
 
 def campo_onde_piramidi(res: Dict[str, Any], an: Dict[str, Any],
@@ -908,6 +944,7 @@ def campo_onde_piramidi(res: Dict[str, Any], an: Dict[str, Any],
         qualita=np.asarray(res["good"], dtype=bool)[ii, jj],
         z_picco=z_axis[k_pic].astype(np.float32),
         sim_h=res["sim_h"][ii, jj].astype(np.float32),
+        amp=res["amp"][ii, jj].astype(np.float32),
         riga=ii.astype(np.int32), colonna=jj.astype(np.int32),
         passo_z=passo,
     )
@@ -1906,17 +1943,166 @@ def _testa(titolo: str) -> str:
     return _HTML_TESTA.replace(vecchio, f"<title>{titolo}</title>")
 
 
+def _svg_onda(z: np.ndarray, curve: List[Tuple[np.ndarray, str, str]],
+              titolo: str, y_lo: float, y_hi: float,
+              rif: Optional[float] = None, w: int = 720, h: int = 240) -> str:
+    """Un grafico SVG in linea: nessuna libreria, nessuna richiesta di rete.
+
+    ``curve`` e' una lista di (valori, colore, etichetta) sullo stesso asse z.
+    ``rif`` disegna una verticale tratteggiata (la quota del picco). Le pagine
+    per singola piramide vanno caricate da sole, quindi tutto quello che
+    disegnano deve stare dentro il file."""
+    ml, mr, mt, mb = 52, 14, 26, 34
+    pw, ph = w - ml - mr, h - mt - mb
+    z0, z1 = float(z[0]), float(z[-1])
+
+    def px(v: float) -> float:
+        return ml + pw * (v - z0) / max(z1 - z0, 1e-9)
+
+    def py(v: float) -> float:
+        return mt + ph * (1.0 - (v - y_lo) / max(y_hi - y_lo, 1e-9))
+
+    parti = [f'<svg viewBox="0 0 {w} {h}" width="100%" '
+             f'style="max-width:{w}px" role="img" aria-label="{titolo}">']
+    parti.append(f'<rect x="{ml}" y="{mt}" width="{pw}" height="{ph}" '
+                 'fill="#FFF" stroke="#E2E8F0"/>')
+    # griglia e tacche in quota
+    for tz in range(int(math.ceil(z0 / 100.0)) * 100, int(z1) + 1, 100):
+        x = px(tz)
+        parti.append(f'<line x1="{x:.1f}" y1="{mt}" x2="{x:.1f}" '
+                     f'y2="{mt + ph}" stroke="#F1F5F9"/>')
+        parti.append(f'<text x="{x:.1f}" y="{mt + ph + 15}" font-size="10" '
+                     f'fill="#64748B" text-anchor="middle">{tz}</text>')
+    # tacche in ordinata
+    for k in range(3):
+        v = y_lo + (y_hi - y_lo) * k / 2.0
+        y = py(v)
+        parti.append(f'<line x1="{ml}" y1="{y:.1f}" x2="{ml + pw}" '
+                     f'y2="{y:.1f}" stroke="#F1F5F9"/>')
+        parti.append(f'<text x="{ml - 6}" y="{y + 3:.1f}" font-size="10" '
+                     f'fill="#64748B" text-anchor="end">{v:+.1f}</text>')
+    if y_lo < 0 < y_hi:
+        parti.append(f'<line x1="{ml}" y1="{py(0):.1f}" x2="{ml + pw}" '
+                     f'y2="{py(0):.1f}" stroke="#CBD5E1"/>')
+    if rif is not None and z0 <= rif <= z1:
+        parti.append(f'<line x1="{px(rif):.1f}" y1="{mt}" x2="{px(rif):.1f}" '
+                     f'y2="{mt + ph}" stroke="#16A34A" stroke-width="1.2" '
+                     'stroke-dasharray="4 3"/>')
+
+    leg = []
+    for k, (val, colore, etichetta) in enumerate(curve):
+        pts = " ".join(f"{px(float(z[i])):.1f},{py(float(val[i])):.1f}"
+                       for i in range(len(z)))
+        parti.append(f'<polyline points="{pts}" fill="none" stroke="{colore}" '
+                     'stroke-width="1.6"/>')
+        leg.append(f'<tspan fill="{colore}">&#9632;</tspan> {etichetta}')
+    parti.append(f'<text x="{ml}" y="{mt - 10}" font-size="11" fill="#334155">'
+                 + "   ".join(leg) + "</text>")
+    parti.append(f'<text x="{ml + pw / 2:.0f}" y="{h - 4}" font-size="10" '
+                 'fill="#64748B" text-anchor="middle">quota z sopra il '
+                 'riferimento .xml [m]</text>')
+    parti.append("</svg>")
+    return "".join(parti)
+
+
+def _pannello_piramide(campo: CampoOnde, p: Pyramid, res: Dict[str, Any],
+                       an: Dict[str, Any]) -> str:
+    """Le forme d'onda calcolate di UNA piramide, come HTML gia' pronto.
+
+    Due grafici: la colonna rappresentativa (la somma delle sue sinusoidi,
+    con l'inviluppo) e la media dei moduli su tutte le celle di quella
+    piramide. La media e' INCOERENTE -- media dei |h|, non dei complessi:
+    celle diverse hanno fasi scorrelate e la media coerente le annullerebbe,
+    dando una curva piatta che sembrerebbe assenza di segnale."""
+    k = campo.rappresentativa()
+    if k < 0:
+        return ""
+    z = campo.z.astype(np.float64)
+    onda = campo.onda[k].astype(np.float64)
+    inv = campo.inviluppo[k].astype(np.float64)
+    medio = campo.inviluppo.mean(axis=0).astype(np.float64)
+    medio = medio / max(float(medio.max()), 1e-9)
+
+    g1 = _svg_onda(
+        z, [(onda, "#0F172A", "somma delle sinusoidi, Re h(z)"),
+            (inv, "#F0A24A", "inviluppo |h(z)|"),
+            (-inv, "#F0A24A", "")],
+        f"forma d'onda della colonna rappresentativa di {p.name}",
+        -1.05, 1.05, rif=float(campo.z_picco[k]))
+    g2 = _svg_onda(
+        z, [(medio, "#2563EB",
+             f"media dei moduli sulle {len(campo)} celle della piramide")],
+        f"profilo medio di {p.name}", 0.0, 1.05)
+
+    idx = an["indice"]
+    i, j = int(campo.riga[k]), int(campo.colonna[k])
+    return f"""
+  <h2>Le forme d'onda calcolate</h2>
+  <div class="grafico">
+    <b>Colonna rappresentativa &mdash; cella ({i}, {j})</b>
+    <p class="did">La piu' luminosa fra quelle sopra la soglia di qualita'.
+    La curva nera e' la somma delle {len(res['dates'])} sinusoidi di questa
+    cella, una per data; l'arancio e' il loro inviluppo analitico. La
+    verticale verde e' la quota del diffusore dominante,
+    {float(campo.z_picco[k]):+.1f} m sopra il riferimento.</p>
+    {g1}
+  </div>
+  <div class="grafico">
+    <b>Profilo medio della piramide</b>
+    <p class="did">Media dei moduli su tutte le {len(campo)} celle. E'
+    incoerente per necessita': celle diverse hanno fasi scorrelate, e una
+    media coerente le annullerebbe.</p>
+    {g2}
+  </div>
+  <table>
+    <tr><td>celle sulla superficie (geometria radar)</td><td class="v">{len(campo)}</td></tr>
+    <tr><td>di cui sopra la soglia di qualita'</td><td class="v">{int(np.count_nonzero(campo.qualita))}</td></tr>
+    <tr><td>quota mediana del diffusore dominante</td><td class="v">{float(np.median(campo.z_picco)):+.1f} m</td></tr>
+    <tr><td>quota simulata mediana della piramide</td><td class="v">{float(np.median(campo.sim_h)):+.1f} m</td></tr>
+    <tr><td>lato di base / altezza (da letteratura)</td><td class="v">{p.base_side_m:.1f} m / {p.height_m:.1f} m</td></tr>
+    <tr><td>pendenza delle facce</td><td class="v">{p.face_slope_deg:.2f}&deg;</td></tr>
+    <tr><td>eccesso massimo (z-score) sulle sue celle</td><td class="v">{float(np.nanmax(idx['pieno_max'][campo.riga, campo.colonna])):+.2f}</td></tr>
+    <tr><td>difetto massimo (z-score) sulle sue celle</td><td class="v">{float(np.nanmin(idx['vuoto_max'][campo.riga, campo.colonna])):+.2f}</td></tr>
+  </table>
+  <div class="nota">La quota mediana del diffusore dominante va confrontata
+  con quella simulata della riga sopra: se le facce fossero ricostruite le
+  due seguirebbero l'una l'altra. Non lo fanno, ed e' il risultato
+  centrale di questa catena, non un difetto del disegno. Con
+  <code>delta_z</code> = {res['budget'].delta_z_vertical:.0f} m le facce a
+  {p.face_slope_deg:.0f}&deg; sono in layover pieno e non esiste un
+  diffusore dominante da localizzare.</div>
+"""
+
+
+def _slug(nome: str) -> str:
+    """Nome di file da un nome di piramide: 'Cheope (Khufu)' -> 'cheope'."""
+    return nome.split()[0].lower().replace("'", "")
+
+
 def build_html_onde3d(campo: CampoOnde, res: Dict[str, Any], cfg: ConfigV3,
-                      ) -> Optional[str]:
-    """Pagina 3D interattiva del campo di onde, pixel per pixel -- F59.
+                      solo: Optional[int] = None,
+                      an: Optional[Dict[str, Any]] = None) -> Optional[str]:
+    """Pagina 3D interattiva del campo di onde, pixel per pixel -- F59, F60.
 
     Porta TUTTE le colonne (il PNG ne dirada), con i cursori per quante
     disegnarne, per la scala orizzontale e per l'esagerazione verticale. La
     scala orizzontale e' un cursore proprio perche' e' un artificio: chi
     guarda deve poter vedere che cambiandola cambia l'aspetto del campo e non
-    il dato."""
+    il dato.
+
+    Con ``solo`` uguale all'indice di una piramide (F60) esce la pagina di
+    QUELLA piramide: le sue sole colonne, i suoi numeri, e i due grafici
+    delle forme d'onda calcolate disegnati in SVG dentro la pagina, senza
+    dipendere da nessun file esterno."""
     if len(campo) == 0:
         return None
+
+    pir_sel: Optional[Pyramid] = None
+    if solo is not None:
+        pir_sel = PYRAMIDS[solo]
+        campo = campo.filtra(campo.piramide == solo)
+        if len(campo) == 0:
+            return None
 
     # ordine spaziale: diradare seguendo questo indice tiene il campo
     # rappresentativo di tutta l'area invece di addensarlo su una fascia
@@ -1940,11 +2126,14 @@ def build_html_onde3d(campo: CampoOnde, res: Dict[str, Any], cfg: ConfigV3,
                         [0, 4], [1, 4], [2, 4], [3, 4]],
         })
 
+    # due decimali e non tre: le curve sono normalizzate a 1 e disegnate su
+    # poche centinaia di pixel, quindi la terza cifra non si vede, mentre nel
+    # file pesa un terzo del payload. La pagina dichiara la precisione.
     payload = {
         "z": np.round(campo.z, 2).tolist(),
         "colonne": colonne.tolist(),
-        "onda": np.round(campo.onda, 3).tolist(),
-        "inviluppo": np.round(campo.inviluppo, 3).tolist(),
+        "onda": np.round(campo.onda, 2).tolist(),
+        "inviluppo": np.round(campo.inviluppo, 2).tolist(),
         "ordine": ordine.tolist(),
         "piramidi": piramidi,
         "colori": list(COLORI_PIRAMIDE),
@@ -1972,10 +2161,53 @@ def build_html_onde3d(campo: CampoOnde, res: Dict[str, Any], cfg: ConfigV3,
         f"</span> {p.name}</td><td class='v'>{c.get(p.name, 0)}</td></tr>"
         for k, p in enumerate(PYRAMIDS))
 
+    # --- pezzi che cambiano fra la pagina d'insieme e quella di una sola
+    # piramide (F60). Il resto della pagina, renderer compreso, resta lo
+    # stesso: due pagine diverse che disegnano la stessa cosa divergerebbero.
+    if pir_sel is None:
+        titolo_pag = "Giza v03 - sinusoidi pixel per pixel sulle piramidi"
+        h1 = ("Giza v03 &mdash; le sinusoidi risultanti, pixel per pixel, "
+              "sulla superficie delle piramidi")
+        occhiello = ""
+        nome_file = cfg.html_onde3d
+    else:
+        titolo_pag = f"Giza v03 - {pir_sel.name}, forme d'onda pixel per pixel"
+        h1 = (f"{pir_sel.name} &mdash; le forme d'onda calcolate, "
+              "pixel per pixel")
+        occhiello = ('<p class="torna"><a href="index.html">&larr; torna '
+                     "all'indice</a></p>")
+        nome_file = f"onde_{_slug(pir_sel.name)}.html"
+
+    caselle = "".join(
+        f'<label class="riga"><input type="checkbox" class="c_pir" '
+        f'data-k="{k}" checked> <span class="pastiglia" '
+        f'style="background:{COLORI_PIRAMIDE[k]}"></span> {p.name}</label>'
+        for k, p in enumerate(PYRAMIDS)
+        if pir_sel is None or k == solo)
+
+    pannello = ("" if pir_sel is None
+                else _pannello_piramide(campo, pir_sel, res, an or {}))
+    stile_extra = "" if pir_sel is None else """
+<style>
+/* la pagina di una singola piramide scorre: sotto la scena 3D ci sono i
+   grafici delle forme d'onda, e devono poter stare piu' in basso */
+body { height: auto; overflow: auto; display: block; }
+main { height: 68vh; min-height: 420px; }
+.sotto { max-width: 1080px; margin: 0 auto; padding: 8px 22px 60px; }
+.grafico { background: #FFF; border: 1px solid #E2E8F0; border-radius: 12px;
+           padding: 16px 18px; margin: 16px 0; }
+.grafico b { font-size: 15px; }
+.did { font-size: 13px; color: #475569; margin: 6px 0 12px; max-width: 760px; }
+.sotto h2 { margin-top: 26px; }
+.sotto table { max-width: 640px; }
+.sotto td { padding: 5px 0; }
+.torna { margin: 6px 0 0; font-size: 13px; }
+</style>
+"""
+
     corpo = f"""
 <header>
-  <h1>Giza v03 &mdash; le sinusoidi risultanti, pixel per pixel, sulla
-  superficie delle piramidi</h1>
+  <h1>{h1}</h1>
   <p>Ogni curva verticale e' <b>una cella</b>: la somma delle sue
   {len(res['dates'])} sinusoidi, una per data, cioe' <code>Re h(z)</code>
   normalizzato al massimo di quella cella. Sta alla propria posizione est/nord
@@ -1983,12 +2215,13 @@ def build_html_onde3d(campo: CampoOnde, res: Dict[str, Any], cfg: ConfigV3,
   est, ed e' un <b>artificio di disegno</b> &mdash; il cursore della scala e'
   li' per farlo vedere. La forma verticale di ogni colonna e' la PSF
   dell'array: <code>delta_z</code> = {budget.delta_z_vertical:.0f} m.</p>
+  {occhiello}
 </header>
 <main>
   <div id="scena"><canvas id="tela"></canvas></div>
   <aside>
     <h2>Quali piramidi</h2>
-    {"".join(f'<label class="riga"><input type="checkbox" class="c_pir" data-k="{k}" checked> <span class="pastiglia" style="background:{COLORI_PIRAMIDE[k]}"></span> {p.name}</label>' for k, p in enumerate(PYRAMIDS))}
+    {caselle}
     <label class="riga"><input type="checkbox" id="c_qual"> solo celle sopra la soglia di qualita'</label>
 
     <h2>Che cosa disegnare</h2>
@@ -2039,6 +2272,7 @@ def build_html_onde3d(campo: CampoOnde, res: Dict[str, Any], cfg: ConfigV3,
     impronta al suolo.</div>
   </aside>
 </main>
+<div class="sotto">{pannello}</div>
 <footer id="pie"></footer>
 """
 
@@ -2309,10 +2543,10 @@ def build_html_onde3d(campo: CampoOnde, res: Dict[str, Any], cfg: ConfigV3,
 </html>
 """
 
-    html = (_testa("Giza v03 - sinusoidi pixel per pixel sulle piramidi")
+    html = (_testa(titolo_pag) + stile_extra
             + corpo + script.replace("DATI_QUI", dati))
     os.makedirs(cfg.out_dir, exist_ok=True)
-    path = os.path.join(cfg.out_dir, cfg.html_onde3d)
+    path = os.path.join(cfg.out_dir, nome_file)
     with open(path, "w", encoding="utf-8") as fh:
         fh.write(html)
     return path
@@ -2633,6 +2867,13 @@ def run_v03(cfg: ConfigV3, verbose: bool = True,
     p_o3 = build_html_onde3d(campo, res, cfg)
     if p_o3:
         percorsi["onde_3d_html"] = p_o3
+    for k, p in enumerate(PYRAMIDS):
+        p_pir = build_html_onde3d(campo, res, cfg, solo=k, an=an)
+        if p_pir:
+            percorsi[f"pagina_{_slug(p.name)}"] = p_pir
+            print(f"      pagina di {p.name}: "
+                  f"{os.path.basename(p_pir)} "
+                  f"({int(np.count_nonzero(campo.piramide == k))} colonne)")
 
     print("\n  [15] nuovo grafico 3D del volume pieno/vuoto")
     percorsi["png_3d"] = plot_3d_png(res, an["indice"], cfg, an["bilancio"])

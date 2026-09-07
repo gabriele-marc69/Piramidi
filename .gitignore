@@ -105,6 +105,9 @@ manifest_scarico.json
 !out_piramidi_v03/pieno_vuoto_3d.png
 !out_piramidi_v03/onde_3d_superficie_piramidi.png
 !out_piramidi_v03/onde_3d_piramidi.html
+!out_piramidi_v03/onde_cheope.html
+!out_piramidi_v03/onde_chefren.html
+!out_piramidi_v03/onde_micerino.html
 !out_piramidi_v03/v03_vuoto_max.npy
 !out_piramidi_v03/v03_pieno_max.npy
 !out_piramidi_v03/v03_z_vuoto.npy
@@ -113,3 +116,5 @@ manifest_scarico.json
 
 # ---- Cartella del sito statico (derivata: la ricostruisce pubblica_sito.py) ----
 sito_giza/
+sito_v02/
+sito_v03/

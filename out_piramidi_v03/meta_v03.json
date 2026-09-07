@@ -1,5 +1,5 @@
 {
-  "generato": "2026-09-07 16:10:24",
+  "generato": "2026-09-07 17:14:24",
   "programma": "piramidi_v03.py (sintesi sinusoidale + FFT verticale)",
   "metodo": "modulo e fase radiante dell'interferogramma multilooked -> una sinusoide verticale per data -> somma -> FFT non uniforme (NUFFT di tipo 1, nucleo gaussiano) -> profilo in quota -> residuo rispetto alla PSF di un solo diffusore -> z-score sul nullo delle celle di piana",
   "identita_con_v02": "la somma delle sinusoidi e' Re[h(z)] e il suo inviluppo e' |h(z)|: e' lo stesso periodogramma di v02, calcolato per FFT invece che con il doppio ciclo. Non e' una misura indipendente.",
@@ -65,8 +65,8 @@
     "errore_relativo_medio": 1e-06,
     "errore_relativo_max": 1.5e-05,
     "errore_p99": 7e-06,
-    "secondi_fft_tutte_le_celle": 0.824,
-    "secondi_diretto_stimati": 5.1
+    "secondi_fft_tutte_le_celle": 0.79,
+    "secondi_diretto_stimati": 5.2
   },
   "confronto_con_v02": {
     "estimatore": "surface_from_tomogram di v02, picco raffinato a parabola",
@@ -536,18 +536,20 @@
       "Chefren (Khafre)": 301,
       "Micerino (Menkaure)": 70
     },
-    "campioni_per_curva": 129,
-    "sottocampionamento_asse_z": 2,
+    "campioni_per_curva": 87,
+    "sottocampionamento_asse_z": 3,
     "scala_disegno_m_per_ampiezza_1": 11.0,
     "quota_picco_mediana_m": 6.25,
     "quota_simulata_mediana_m": 39.103661
   },
   "uscite": {
-    "html_v02": "out_piramidi_v03\\tomografia_piramidi_3d.html",
     "onde": "out_piramidi_v03\\onde_cheope_chefren.png",
     "sezione_onde": "out_piramidi_v03\\sezione_onde_sotto_piramidi.png",
     "onde_3d_png": "out_piramidi_v03\\onde_3d_superficie_piramidi.png",
     "onde_3d_html": "out_piramidi_v03\\onde_3d_piramidi.html",
+    "pagina_cheope": "out_piramidi_v03\\onde_cheope.html",
+    "pagina_chefren": "out_piramidi_v03\\onde_chefren.html",
+    "pagina_micerino": "out_piramidi_v03\\onde_micerino.html",
     "png_3d": "out_piramidi_v03\\pieno_vuoto_3d.png",
     "html_v03": "out_piramidi_v03\\tomografia_v03_pieno_vuoto.html"
   },
@@ -586,6 +588,11 @@
       "id": "F57",
       "tipo": "uscita",
       "descrizione": "Nuovo grafico 3D del volume pieno/vuoto (HTML interattivo autonomo + PNG): voxel di eccesso in rosso e di difetto in blu, con soglia in z-score regolabile, sopra la superficie misurata e i profili delle piramidi."
+    },
+    {
+      "id": "F60",
+      "tipo": "uscita",
+      "descrizione": "Una pagina per ciascuna piramide, con le SUE sole colonne e le forme d'onda calcolate disegnate dentro la pagina in SVG: la somma delle sinusoidi della colonna rappresentativa con il suo inviluppo, e la media INCOERENTE dei moduli su tutte le celle di quella piramide (la media coerente le annullerebbe, perche' le fasi fra celle sono scorrelate). Nessun file esterno e nessuna libreria: la pagina si regge da sola. Il renderer 3D e' lo stesso della pagina d'insieme, filtrato -- due copie divergerebbero."
     },
     {
       "id": "F59",

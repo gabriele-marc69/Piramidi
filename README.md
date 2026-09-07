@@ -149,6 +149,29 @@ deserto per tutte e tre le piramidi e non segue in alcun modo il profilo delle
 facce. È l'osservazione centrale di v02 — la pendenza misurato *vs* simulato
 compatibile con zero — disegnata invece che riassunta in un numero.
 
+## Pagine pubblicate
+
+Le due catene stanno su due progetti distinti, ognuno con il proprio indice.
+I dati della corsa (riassunti JSON e budget) sono **dentro** la pagina, non in
+file da scaricare a parte, e i numeri dell'indice sono letti da quei riassunti
+invece che riscritti a mano.
+
+| | |
+|---|---|
+| **v02** — superficie e tomogramma | <https://tomografia-giza-v02.gabrielemarchini69.workers.dev> |
+| **v03** — sinusoidi, FFT e pieno/vuoto | <https://tomografia-giza-v03.gabrielemarchini69.workers.dev> |
+
+Il progetto v03 porta anche **una pagina per piramide** (`onde_cheope.html`,
+`onde_chefren.html`, `onde_micerino.html`): le sole colonne di quella piramide
+in 3D e, sotto, due grafici SVG disegnati dentro la pagina — la somma delle
+sinusoidi della colonna rappresentativa con il suo inviluppo, e il profilo
+medio incoerente di tutte le sue celle.
+
+```bash
+python pubblica_sito.py --profilo v03 --out sito_v03
+python pubblica_sito.py --profilo v02 --out sito_v02
+```
+
 ## Metodo e fonti
 
 Il programma segue le fonti alla lettera dove sono applicabili — banda di
