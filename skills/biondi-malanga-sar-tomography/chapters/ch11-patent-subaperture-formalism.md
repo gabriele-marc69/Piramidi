@@ -9,7 +9,7 @@ The patent gives the full signal-model derivation the Giza paper compresses into
 
 - **Master/slave band pair with fixed separation `B_shift`**: the master is focused on the full chirp band `B_cT` and half the Doppler band; the slave is the same image focused on a band offset in azimuth frequency by `B_shift`.
   - When to use: whenever you want to select *which* mechanical frequency the tomogram is sensitive to.
-  - How: set `B_shift` to the vibrational frequency you wish to observe. **The higher `B_shift`, the lower the observed mechanical frequency** — this is the tuning knob, and it is stated nowhere in the paper.
+  - How: set `B_shift` to the vibrational frequency you wish to observe. **The higher `B_shift`, the lower the observed mechanical frequency** — this is the tuning knob, and it really is stated nowhere in the paper. (Contrast `B_DL` and `N_D`, which *are* defined in the paper's §3.1 and equations (4)–(5); what the paper omits is what `N_D` physically means.)
   - Why it works: the two bands sample the same scene at two different points of the synthetic aperture; their sub-pixel disparity is the displacement accumulated between those two instants.
 
 - **Guard band `B_DL = B_cD / 2`**: half the Doppler bandwidth is deliberately *not* processed by the matched filter.
@@ -17,7 +17,7 @@ The patent gives the full signal-model derivation the Giza paper compresses into
   - How: focus master and slave using range-azimuth bandwidth `B_cr, B_cD − B_DL`; the withheld `B_DL` is the room in which the pair can slide.
   - Failure mode if skipped: focusing on the entire Doppler band restores maximum azimuth resolution but destroys motion sensitivity — there is no unused band left to shift through.
 
-- **`N_D` as the mechanical sampling rate**: the withheld bandwidth is divided into `N_D` equally-distributed steps; `N_D` rigid shifts of the master-slave system populate the data matrices.
+- **`N_D` as the mechanical sampling rate**: the withheld bandwidth is divided into `N_D` equally-distributed steps; `N_D` rigid shifts of the master-slave system populate the data matrices. (Notation caveat: the **paper** writes "`N_c` rigid shifts" at this point and never uses `N_c` again; the **patent** writes `N_D` for both the number of steps and the number of shifts. Treat them as the same count.)
   - Key reframing: `N_D` is not a processing convenience — it *is* the digital sampling rate at which the Earth's mechanical wave is being sampled. Choose it by Nyquist against the vibration you want, not by compute budget.
   - Each Doppler frequency step equals `(B_cD − B_DL) / N_D`.
 
@@ -39,9 +39,9 @@ The patent gives the full signal-model derivation the Giza paper compresses into
 | `θ` | incidence angle of the radiation pattern |
 | `B_cr` / `B_cT` | total chirp (range) bandwidth |
 | `B_cD = 4Nd/λr` | total Doppler bandwidth |
-| `B_DL = B_cD/2` | withheld (unprocessed) Doppler band |
+| `B_DL = B_cD/2` | withheld (unprocessed) Doppler band — the patent calls it `B_C_L` in [0004] and `B_D_L` in [0005]; the paper uses `B_DL`. Same quantity. |
 | `B_shift` | master–slave azimuth-frequency separation = selected vibrational frequency |
-| `N_D` | number of Doppler sub-aperture refocused images = mechanical sampling rate |
+| `N_D` | number of Doppler sub-aperture refocused images = mechanical sampling rate (the "sampling rate" reading is the patent's; the paper defines `N_D` without interpreting it) |
 | `δ_D ≈ 1/B_cD = λR/2L_sa` | azimuth resolution |
 
 ## Code Examples — the equations in sequence
@@ -97,7 +97,7 @@ The ordered set of `N_D` displacement estimates *is* the time-domain vibration t
 Note what makes this work: the orbital shift along the aperture provides the *time* axis. The satellite's own motion is the clock.
 
 ## Key Takeaways
-1. `B_shift` selects the observed mechanical frequency — higher `B_shift` → lower observed frequency. This is the single most actionable parameter the paper omits.
+1. `B_shift` selects the observed mechanical frequency — higher `B_shift` → lower observed frequency. This is the single most actionable parameter the paper omits; `B_DL` and `N_D` are *not* omitted by the paper, only left uninterpreted.
 2. `B_DL = B_cD/2` is not a lossy compromise but the precondition for motion sensitivity; half the azimuth resolution is the price of the depth dimension.
 3. `N_D` is the mechanical sampling rate — pick it against the vibration bandwidth you need, then accept the compute cost.
 4. The rectangular spectrum of a focused SAR image is what makes sub-banding mathematically clean.

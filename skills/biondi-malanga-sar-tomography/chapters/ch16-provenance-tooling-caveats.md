@@ -12,10 +12,13 @@ This preprint is the origin document of the whole corpus: it is where the method
 | 18 June 2022 | arXiv:2206.09200 **v1** posted — cited by the EPO as XP091253966, "Scanning Inside Volcanoes by Synthetic Aperture Radar Echography Tomographic Doppler Imaging" |
 | 04 July 2022 | Patent priority date (PT4451, MT) — **16 days after the preprint** |
 | 18 July 2022 | arXiv:2206.09200 **v2** posted — the version in hand, retitled "Scanning Volcanoes by Synthetic Aperture Radar" |
+| 30 Aug 2022 | Remote Sensing 14, 5231 (Giza paper) received |
+| 12 Oct 2022 | Giza paper accepted |
+| 19 Oct 2022 | Giza paper published |
 | 29 May 2023 | PCT application PCT/EP2023/064345 filed |
 | 31 Aug 2023 | EPO international search completed — category X against claims 1–10 |
+| 08 Sep 2023 | ISR mailed (authorized officer Rudolf, Hans) |
 | 11 Jan 2024 | WO 2024/008365 A1 published |
-| 2022 | Remote Sensing 14, 5231 (Giza paper) published |
 
 **Reading the versions**: the document merged here is v2. The examiner cited the June v1, under a longer title. When citing "the volcano preprint" be explicit about which version — the titles differ, and only v1 is prior art against the patent.
 
@@ -46,7 +49,7 @@ This preprint is the origin document of the whole corpus: it is where the method
 
 - **Publishing before filing.** The 16-day gap between v1 and the priority date is the entire novelty problem of the patent. See ch10.
 - **Leaving template boilerplate in a released preprint.** Section 2.1, titled "Headings: second level", contains lorem-ipsum filler text ("Fusce mauris. Vestibulum luctus nibh at lectus…") and an unrelated equation (1) — a hidden-Markov-model forward-backward expression `ξij(t) = P(x_t = i, x_t+1 = j | y, v, w; θ)` — inherited from the PRIME AI paper LaTeX template and never removed. It has nothing to do with the method.
-  - **Why it matters**: numbered equation (1) in this preprint is not part of the method. Anyone citing "equation (1) of Biondi 2022" from this document would be citing template residue. The real derivation starts at section 2.3.
+  - **Why it matters**: numbered equation (1) in this preprint is not part of the method. Anyone citing "equation (1) of Biondi 2022" from this document would be citing template residue. Note where it sits: section 2.1 is spliced *into* the middle of section 2, whose untitled opening already carries the real sub-aperture derivation (MCA, master/slave bands, the ε displacement terms). The method resumes in 2.2 (Tomographic Model) and 2.3 (Vibrational Model of the Earth) — so the filler interrupts the derivation rather than preceding it.
   - It also signals the document did not receive a final proofing pass — reasonable grounds to prefer the peer-reviewed Giza paper or the patent for formal citation.
 - **Citing this preprint as peer-reviewed.** It is an arXiv posting in eess.SP. The Giza paper (Remote Sensing, MDPI) is the peer-reviewed member of the corpus.
 

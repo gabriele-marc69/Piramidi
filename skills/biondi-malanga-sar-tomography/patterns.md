@@ -7,7 +7,7 @@
 
 ## Harmonic-Oscillator Tomographic Inversion
 **When to use**: Converting per-pixel vibration measurements along a chosen depth line into a physically-interpretable depth profile ("tomogram").
-**How**: Model each pixel as a damped 2-DOF linear harmonic oscillator; assemble the multi-baseline data vector Y and steering matrix A(Kz,z); approximate the inverse via matched filtering, h(z) ≈ Aᴴ(Kz,z)·Y.
+**How**: Model each pixel as a damped 2-DOF linear harmonic oscillator; assemble the multi-baseline data vector Y and steering matrix A(Kz,z); invert as h(z) = A(Kz,z)†·Y. The sources leave the dagger undefined — matched filtering, h(z) ≈ Aᴴ(Kz,z)·Y, is what their "best approximation of a DFT operator / pulse compression" wording describes.
 **Trade-offs**: Matched-filter inversion is fast but is an approximation, not an exact/regularized solve — sensitive to model assumptions (linear oscillator, single dominant scatterer per resolution cell).
 
 ## Interferometric Fringe-Inclination Surface Mapping
@@ -47,8 +47,8 @@
 
 ## Multi-Geometry Tomographic Lines
 **When to use**: One tomographic line's orientation cannot reach the internal feature you care about.
-**How**: Acquire the same scene from more than one satellite/geometry (different slant ranges R1, R2, different squint) and run an independent tomographic line per acquisition. Each line yields its own tomographic map of the same object.
-**Trade-offs**: Multiplies acquisition and compute cost linearly, but line orientation gates visibility — no amount of processing recovers a feature the chosen line never crosses.
+**How**: First exhaust the free option — re-run differently-oriented lines on the *same* SLC image (Vesuvius uses range, azimuth, oblique and crater-spanning lines from one acquisition). When no reachable orientation crosses the feature, acquire the same scene from more than one satellite/geometry (different slant ranges R1, R2, different squint) and run an independent tomographic line per acquisition. Each line yields its own tomographic map of the same object.
+**Trade-offs**: Re-orienting costs only compute; adding a geometry multiplies acquisition cost too. Line orientation gates visibility — no amount of processing recovers a feature the chosen line never crosses, but plenty of features are recovered by re-orienting alone.
 
 ## Sequence Priority Filing Before Self-Disclosure
 **When to use**: Any time you intend to both publish research and patent it.
@@ -57,7 +57,7 @@
 
 ## Depth-vs-Resolution Tuning via Investigation Frequency
 **When to use**: At acquisition-planning time, before any processing, once you know the depth you must reach.
-**How**: delta_z = lambda*R/(2*A) with lambda = v/f. Pick the investigation frequency f from the depth requirement: low f gives a long acoustic wavelength, coarse cells, deep reach; high f gives fine cells, shallow reach. Worked settings across the corpus: 200 Hz -> ~36 m cells, ~3 km depth (Vesuvius); 12.5 kHz -> ~0.92 m cells, pyramid interior (Giza); ~22 kHz -> ~1.30 m cells (patent).
+**How**: delta_z = lambda*R/(2*A) with lambda = v/f. Pick the investigation frequency f from the depth requirement: low f gives a long acoustic wavelength, coarse cells, deep reach; high f gives fine cells, shallow reach. Worked settings across the corpus: 200 Hz -> ~36 m cells, ~3 km depth (Vesuvius); 12.5 kHz -> ~0.92 m cells as published, pyramid interior (Giza; its own parameters give ~3.7 m, see ch04 errata); ~22 kHz -> ~1.30 m cells (patent). Always re-substitute the source's stated v, f and A before reusing a published cell size.
 **Trade-offs**: The medium's propagation speed v is not yours to choose and shifts lambda by up to a factor of 6 between a volcanic edifice (~972 m/s assumed) and pyramid stone (~6000-6600 m/s assumed). Getting v wrong scales the entire depth axis.
 
 ## Three-Layer Validation of a Novel Imaging Modality

@@ -40,7 +40,7 @@
 
 **Grotto** — Known void feature detected with the Zed/King's Chamber tomography; connects toward the unfinished room. (Ch 6)
 
-**Guard band (B_DL = B_cD/2)** — Bandwidth deliberately excluded from the SAR matched filter to preserve sensitivity to target motion; the room in which the band pair slides. (Ch 3, Ch 11)
+**Guard band (B_DL = B_cD/2)** — Bandwidth deliberately excluded from the SAR matched filter to preserve sensitivity to target motion; the room in which the band pair slides. Written `B_DL` in the paper and in patent [0005], `B_C_L` in patent [0004]. (Ch 3, Ch 11)
 
 **Harmonic-oscillator vibrational model** — Model treating each tomographic-line pixel as a damped mass-spring system whose measured amplitude/phase feed the tomographic inversion. (Ch 4, Ch 12)
 
@@ -74,7 +74,7 @@
 
 **Multi-Chromatic Analysis (MCA)** — Range-direction technique for retrieving unambiguous height/phase information, applied here in the Doppler direction for vibration extraction. (Ch 1, Ch 3, Ch 14)
 
-**N_D** — Number of Doppler sub-aperture refocused images; *is* the digital sampling rate of the mechanical wave being observed. (Ch 11)
+**N_D** — Number of Doppler sub-aperture refocused images; *is* the digital sampling rate of the mechanical wave being observed. Defined in both the paper (§3.1, eqs 4–5) and the patent ([0005]); only the patent says what it physically is. The paper writes `N_c` for the number of rigid master–slave shifts, the patent writes `N_D` for both. (Ch 11)
 
 **Non-resonating material** — Detection signature of vent conduits: absence of vibrational energy rather than presence. (Ch 14)
 
@@ -90,7 +90,7 @@
 
 **PRIME AI template residue** — Section 2.1 and equation (1) of arXiv:2206.09200v2 are unremoved LaTeX lorem-ipsum filler, not part of the method. (Ch 16)
 
-**Pulse compression** — The focusing operation h(z) = A†Y; makes structureless raw vibration traces legible as a tomogram. (Ch 12, Ch 13)
+**Pulse compression** — The focusing operation h(z) = A†Y; makes structureless raw vibration traces legible as a tomogram. The dagger is undefined in the sources — matched filter Aᴴ by the surrounding text, pseudo-inverse by convention. (Ch 12, Ch 13)
 
 **Queen's Bottom Room** — Tag #14; structure below the Queen's Chamber connected via a small conduit. (Ch 7)
 
@@ -128,7 +128,7 @@
 
 **Tomographic map** — The focused tomographic image (block 10); the output of pulse compression on the raw vibrational data. (Ch 13)
 
-**Tomographic resolution (δ_z = λR/2A)** — Depth resolution formula, where λ is the **sound** wavelength in the medium, not the radar wavelength. ≈36 m (Vesuvius) / ≈0.92 m (Giza paper) / ≈1.30 m (patent). (Ch 4, Ch 12, Ch 14)
+**Tomographic resolution (δ_z = λR/2A)** — Depth resolution formula, where λ is the **sound** wavelength in the medium, not the radar wavelength. ≈36 m (Vesuvius) / ≈0.92 m (Giza paper, *as published*) / ≈1.30 m (patent). The Giza figure does not follow from the parameters that paper states — substitute its own f and A as written and you get ≈3.7 m. (Ch 4 errata, Ch 12, Ch 14)
 
 **Unfinished Room** — Known off-axis, underground chamber; detected only weakly by the tomography. (Ch 2, Ch 6)
 

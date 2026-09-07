@@ -27,7 +27,7 @@ Sub-aperture strategy quantities (paraphrased):
 | `L_sa = 2Nd` | Total synthetic aperture length |
 
 ## Worked Example
-The paper demonstrates the method on one pixel (circled in yellow, "pixel 1") in the SAR image of the pyramid: the raw time-domain magnitude displacement trend is plotted in range and azimuth separately, each shown as (a) an unfiltered blue trace and (b) a smoothed positive-envelope red trace. This single-pixel vibration extraction is the atomic operation repeated across the whole tomographic line to build one tomogram (see Section 4).
+The paper demonstrates the method on one pixel, taken from inside yellow circle 1 on the SAR magnitude image of the pyramid (Figure 3b). The extracted time-domain displacement is plotted in **three** figures — Figure 4 magnitude, Figure 5 range, Figure 6 azimuth. Each plot carries two curves on the same axes: blue is the unfiltered displacement trend, red its positive envelope. This single-pixel vibration extraction is the atomic operation repeated across the whole tomographic line to build one tomogram (see Section 4).
 
 ## Key Takeaways
 1. Only **one** SAR SLC image is required per tomogram — motion/vibration is extracted from Doppler sub-apertures of that single acquisition, not from a repeat-pass pair.

@@ -7,7 +7,7 @@ Data Space Ecosystem.
 
 Il programma non prova a confermare le fonti: prova a **misurare** che cosa i
 dati Sentinel-1 permettono davvero di dire, e a dichiarare i limiti dove
-esistono. La risposta breve, dopo 29 acquisizioni, è che la superficie della
+esistono. La risposta breve, dopo 43 acquisizioni, è che la superficie della
 piana si ricostruisce con precisione metrica ma **le piramidi non vengono
 ricostruite**, e la ragione è geometrica, non algoritmica.
 
@@ -69,12 +69,18 @@ di coregistrazione non viene più dal picco della cross-correlazione di fase
 dallo spostamento che massimizza la coerenza con il master. Su 41 di queste
 date la versione precedente dava coerenza 0,29, `σ_h` 12,7 m e 28 % di celle
 sopra soglia. Resta vero che aggiungere date allarga le baseline ma porta
-decorrelazione temporale (±120 giorni, tre satelliti): circa 12 date su 42
-stanno al pavimento dello stimatore anche dopo la correzione.
+decorrelazione temporale (±120 giorni, tre satelliti): 11 date su 42
+restano al pavimento dello stimatore (coerenza 0,18-0,19) anche dopo la
+correzione.
 
 Il datum verticale letto dagli `annotation.xml` dipende dal prodotto: la
-bilineare locale sulle piramidi vale 64 m nei prodotti S1A e 44 m in altri
-(F49). Il layer del suolo usa quello del master, con questa incertezza.
+bilineare locale sulle piramidi spazia fra 44,0 e 64,0 m sulle 43 date (F49).
+Non è una differenza fra missioni — il nodo grezzo più vicino a Cheope vale
+64 m in tutti e 43 i prodotti impilati, S1A, S1C e S1D indifferentemente — ma
+di reticolo: i prodotti non condividono la stessa geolocation grid, quindi la
+cella che contiene il ritaglio non è la stessa e i suoi quattro nodi cambiano
+da una data all'altra. Il layer del suolo usa il datum del master, con questa
+incertezza.
 
 ## Metodo e fonti
 
@@ -95,6 +101,27 @@ resta un attributo di superficie.
   categoria X su tutte e 10 le rivendicazioni: va citata come divulgazione di
   un metodo, mai come brevetto concesso
 * arXiv:2206.09200 — *Scanning Volcanoes by Synthetic Aperture Radar*
+
+### Un errore nelle fonti
+
+Il calcolo della risoluzione tomografica dell'articolo di Giza non torna con i
+suoi stessi parametri. La stessa frase fissa la frequenza di indagine a
+12&nbsp;500 Hz e poi scrive `λ = v/f ≈ 6000/25 000 ≈ 0,24 m`: divide per `2f`.
+Dichiara l'apertura orbitale "circa 42&nbsp;000 m" e poi sostituisce `2·84 000`
+al denominatore: il doppio. I due scarti spingono nella stessa direzione.
+Rifacendo `δ_z = λR/(2A)` con i valori dichiarati — v = 6000 m/s,
+f = 12&nbsp;500 Hz, A = 42&nbsp;000 m, R = 650&nbsp;000 m — viene **3,7 m**,
+quattro volte più grossolano degli 0,92 m pubblicati; e il paragrafo 5.2 dello
+stesso articolo dichiara ancora un'altra cifra, 1 m per pixel.
+
+Le catene del preprint del Vesuvio (36 m) e del brevetto (1,30 m) tornano
+invece riga per riga. Gli 0,92 m vanno citati come *la costante con cui
+l'articolo ha scalato le sue figure*, non come un risultato che i suoi
+parametri sostengono: tutte le misure del catalogo di 20 strutture poggiano su
+quella scala. L'elenco completo degli errata — compresi i 22 contro 24 kHz
+della banda Doppler, le due sigle per la stessa banda di guardia nel brevetto e
+`N_c` contro `N_D` per gli stessi scorrimenti — sta in
+`skills/biondi-malanga-sar-tomography/SKILL.md`.
 
 ## Avvertenza epistemica
 

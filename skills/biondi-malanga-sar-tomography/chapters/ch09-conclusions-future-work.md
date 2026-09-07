@@ -14,7 +14,7 @@ The authors position SAR MM Doppler tomography as a fast, economical, non-invasi
 1. The authors explicitly state confirmation requires physical field validation — the tomographic catalog is a hypothesis, not proof.
 2. Next planned step (at time of writing): apply the identical SAR MM tomography method to the Khafre (Kefren) pyramid.
 3. A minimally-invasive drilling path (through tag 18) is proposed as the most direct way to test the catalog.
-4. Disclosed conflicts/context: the signal-processing technique was filed as a patent application (Malta, July 2022); no external funding was received; data availability is marked "not applicable."
+4. Disclosed context: no external funding; data availability "not applicable"; **"Conflicts of Interest: The authors declare no conflict of interest."** The patent filing (Commerce Department of Malta, Industrial Property Registrations Directorate, application no. **4451**, **4 July 2022**) is disclosed in the *Acknowledgments*, not in the conflicts statement — worth noting, since that filing is the priority of WO 2024/008365 (ch10).
 
 ## Anti-patterns
 - **Treating a single-paper tomographic catalog as archaeological consensus**: the authors' own framing ("hypothetical interpretation," "starting point for future research," call for excavation) signals this work sits at an early, unverified stage — useful context before citing its structural claims as established fact.

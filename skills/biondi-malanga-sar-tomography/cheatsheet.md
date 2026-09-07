@@ -10,7 +10,7 @@
 - **When computing depth resolution** -> lambda in delta_z = lambda*R/(2*A) is the SOUND wavelength in the medium, never the radar wavelength (Ch 12).
 - **When applying the linear 2-DOF oscillator** -> first check that L is not close to L0; that is the regime where the cubic term dominates (Ch 12).
 - **When implementing the pipeline** -> compute the forward FFT2 once (block 2) and copy to both branches; only the two IFFT2s and the tracker run inside the N_D loop (Ch 13).
-- **When one tomographic line misses a feature** -> add an acquisition geometry, do not add processing. Line orientation gates visibility (Ch 13).
+- **When one tomographic line misses a feature** -> first re-run along a differently-oriented line on the *same* SLC image: line orientation is a processing parameter and costs no new data (Ch 14). Add an acquisition geometry only when no reachable orientation crosses the feature (Ch 13, Fig. 0.7).
 - **When a tomographic feature looks unusually bright/large near a pyramid edge or corner** -> check for a geometric false-alarm cause (e.g. ascending-angle artifact) before cataloging it (Ch 7).
 - **When a new finding overlaps prior-literature claims (thermal, gravimetric, muon, etc.)** -> explicitly check for both agreement and disagreement; report non-matches (Ch 8).
 - **When presenting a new imaging method's output** -> pair an overlapped-on-ground-truth view with a blind/non-overlapped view (Ch 6).
@@ -48,10 +48,10 @@
 | Target | volcano edifice | pyramid | generic |
 | Vibration propagation speed v | ~972 m/s (3500 km/h) | ~6000 m/s | ~6600 m/s |
 | Investigation frequency f | 200 Hz | 12 500 Hz | ~22 000 Hz |
-| Sound wavelength lambda = v/f | ~4.86 m | not stated | ~0.30 m |
+| Sound wavelength lambda = v/f | ~4.86 m | printed ~0.24 m, as 6000/25 000 (= v/2f) | ~0.30 m |
 | Slant range R | 650 000 m | 650 000 m | 650 000 m |
-| Orbit aperture A | 42 000 m | not stated | 75 000 m (half orbit) |
-| **Depth resolution delta_z** | **~36 m** | **~0.92 m** | **~1.30 m** |
+| Orbit aperture A | 42 000 m | stated 42 000 m, substituted 84 000 m | 75 000 m (half orbit) |
+| **Depth resolution delta_z** | **~36 m** (fraction: 37.6) | **~0.92 m published; ~3.7 m from stated values** | **~1.30 m** (exact) |
 | Reach | ~3 km | pyramid interior | several km (axis to -3 km) |
 | Satellite / mode | CSG spotlight-2A, HH | CSG spotlight, HH/VV | any (claim 3) |
 | Doppler band | ~22.5 kHz (synth. 24 kHz) | 22 kHz | 22 kHz |
@@ -59,11 +59,13 @@
 
 Rule of thumb: delta_z scales as v/(f) x R/(2A). Depth reach and cell size move in opposite directions through f.
 
+**Errata warning**: only the Vesuvius and patent chains close arithmetically. The Giza paper divides by 2f where it wrote f, and by 2A where it wrote A; its published 0.92 m is four times finer than its own parameters give (~3.7 m), and its Section 5.2 separately quotes 1 m/pixel. Full list in SKILL.md, "Errata in the Sources".
+
 ### Sub-aperture processing constants
 
 | Symbol | Rule |
 |---|---|
-| B_DL | = B_cD / 2 (always withheld) |
+| B_DL | = B_cD / 2 (always withheld; the patent also spells it B_C_L in paragraph [0004]) |
 | Master focus band | B_cr x (B_cD - B_DL) |
 | Doppler step per shift | (B_cD - B_DL) / N_D |
 | B_shift | = selected vibrational frequency (inverse relation) |
@@ -80,7 +82,8 @@ Rule of thumb: delta_z scales as v/(f) x R/(2A). Depth reach and cell size move 
 | Which mechanical frequency | B_shift selection | Same single image |
 | Cross-check exterior displacement | LiDAR comparison | Independent LiDAR survey |
 | Validate known interior features | Overlap/non-overlap tomogram rendering | Known architectural schematic |
-| Reach a feature one line misses | Second acquisition geometry | Additional satellite/pass |
+| Reach a feature one line misses | Re-orient the tomographic line first | Same single image (processing only) |
+| Reach a feature no orientation crosses | Second acquisition geometry | Additional satellite/pass |
 
 ## Pipeline at a Glance (Fig. 0.5)
 
@@ -95,5 +98,6 @@ Rule of thumb: delta_z scales as v/(f) x R/(2A). Depth reach and cell size move 
 - Raw vibrational magnitude that looks like structureless oscillation (Fig. 0.8 a, c) -> that is the expected pre-compression state, not a failed measurement.
 - Azimuth displacement / azimuth smearing / range-walking in a focused image -> tells you which motion component (range velocity / azimuth velocity or range acceleration / range speed) dominates.
 - A depth resolution that looks ~10x too good -> someone used the radar wavelength instead of the sound wavelength in delta_z = lambda*R/(2*A).
+- A delta_z that does not reproduce when you re-substitute the paper's own v, f and A -> check for a factor-2 slip on either term. The Giza paper has one on each, compounding to 4x (see errata).
 - A tomogram feature that disappears when you rotate the tomographic line -> processing artifact, not structure.
 - A validation section with overlays but no error plot -> visual agreement only; weigh it below a quantitative check.

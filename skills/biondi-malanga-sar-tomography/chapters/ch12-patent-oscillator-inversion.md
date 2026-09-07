@@ -73,8 +73,10 @@ Sonic tomographic model (23) and its solution (24):
 
 ```
 Y    = A(Kz, z) * h(z)
-h(z) = A(Kz, z)^dagger * Y        (dagger = matched-filter / pseudo-inverse)
+h(z) = A(Kz, z)^dagger * Y
 ```
+
+The dagger is never defined in either document. Conventionally it is the Moore-Penrose pseudo-inverse, but the surrounding text ("the best approximation of a matrix operator performing the DFT of Y", "obtained by doing pulse compression") describes a matched filter `A^H`. State the ambiguity when you implement it; the two differ whenever the steering matrix is ill-conditioned.
 
 Tomographic resolution:
 
@@ -90,13 +92,15 @@ delta_T = lambda*R / (2*A)
 |---|---|---|
 | Seismic propagation speed `v` | ~6600 m/s | ~6000 m/s |
 | Max investigation frequency `f` | ~22 000 Hz | 12 500 Hz |
-| Sound wavelength `lambda = v/f` | ~0.30 m | not stated |
+| Sound wavelength `lambda = v/f` | ~0.30 m (= 6600/22000, correct) | printed as ~0.24 m, but as `6000/25,000` — i.e. divided by `2f` |
 | Slant range `R` | 650 000 m | 650 000 m |
-| Orbit aperture `A` | 75 000 m (half total orbit length) | not stated |
-| SLC Doppler synthesis | 22 kHz | 22 kHz |
-| **Tomographic resolution `delta_z`** | **~1.30 m** | **~0.92 m** |
+| Orbit aperture `A` | 75 000 m (half total orbit length) | stated ~42 000 m, **substituted as 84 000 m** |
+| SLC Doppler synthesis | 22 kHz | 24 kHz in the derivation; 22 kHz in Table 1 |
+| **Tomographic resolution `delta_z`** | **~1.30 m** (arithmetic closes) | **~0.92 m as published**; the stated parameters give ~3.7 m |
 
-Read the difference as a range, not a contradiction: `delta_z = lambda*R/(2*A)` is fully determined by the assumed sound speed, the chosen investigation frequency, and how much orbit you are willing to synthesize. The patent takes the aggressive-aperture / high-frequency case; the paper takes a lower investigation frequency.
+Read most of the difference as a range, not a contradiction: `delta_z = lambda*R/(2*A)` is fully determined by the assumed sound speed, the chosen investigation frequency, and how much orbit you are willing to synthesize. The patent takes the aggressive-aperture / high-frequency case; the paper takes a lower investigation frequency.
+
+**But the paper's cell is not merely a different regime — it is arithmetically inconsistent with its own text.** The patent's chain checks out line by line (`6600/22000 = 0.30`; `0.30*650000/(2*75000) = 1.30`). The paper's does not: it declares `f = 12,500 Hz` and then divides by 25,000, and it declares `A ~= 42,000 m` and then divides by `2*84,000`. Redo it with the paper's own stated values and you get `0.48*650000/(2*42000) = 3.71 m`. See ch04 for the full errata. Use 0.92 m only as "the constant the paper scaled its figures by".
 
 ## Worked Example — computing `delta_z` the patent's way
 
@@ -125,7 +129,7 @@ What the arithmetic tells you: resolution improves linearly with **higher invest
 2. `{a, b}` in equation (20) are the coregistrator's measured shifts — the measurement-to-physics bridge.
 3. `Kz = 4*pi*B_perp/(lambda*r_i*sin(theta))` carries the orthogonal baseline into the depth phase ramp.
 4. `h(z) = A^dagger * Y` is pulse compression — depth focusing *is* Fourier focusing here.
-5. `delta_z = lambda*R/(2*A)` with lambda = **sound** wavelength; patent case ~1.30 m, paper case ~0.92 m.
+5. `delta_z = lambda*R/(2*A)` with lambda = **sound** wavelength; patent case ~1.30 m (arithmetic verified), paper case ~0.92 m published but ~3.7 m from its own stated parameters (ch04 errata).
 6. Longitudinal oscillations run at ~2x the transverse frequency; their coupling is nonlinear.
 
 ## Connects To

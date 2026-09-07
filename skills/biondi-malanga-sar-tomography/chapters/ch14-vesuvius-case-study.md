@@ -36,10 +36,10 @@ The Vesuvius study is the method's first published application and its most perm
 | SAR acquisition duration | ~14 seconds |
 | Seismic propagation speed `v` | ~3500 km/h ≈ 972 m/s |
 | Investigation frequency `f` | 200 Hz |
-| Sound wavelength `λ = v/f` | ≈ 4.86 m |
-| Orbit aperture `A` | ~42 000 m (half total orbit length) |
+| Sound wavelength `λ = v/f` | ≈ 4.86 m (printed as `3500/200`, a unit slip: 4.86 = 972/200) |
+| Orbit aperture `A` | ~42 000 m (half total orbit length), substituted consistently as `2·42 000` |
 | Slant range `R` | 650 000 m |
-| **Tomographic resolution `δ_z`** | **≈ 36 m** |
+| **Tomographic resolution `δ_z`** | **≈ 36 m as published** (the fraction evaluates to 37.6 m) |
 | Depth of investigation | ~3 km below peak topographic height |
 | Acquisition month | February 2022 |
 
@@ -49,12 +49,14 @@ The Vesuvius study is the method's first published application and its most perm
 |---|---|---|---|
 | `v` | ~972 m/s | ~6000 m/s | ~6600 m/s |
 | `f` | 200 Hz | 12 500 Hz | ~22 000 Hz |
-| `λ` | 4.86 m | not stated | 0.30 m |
-| `A` | 42 000 m | not stated | 75 000 m |
-| `δ_z` | ~36 m | ~0.92 m | ~1.30 m |
+| `λ` | 4.86 m | printed 0.24 m (as `6000/25 000`, i.e. `v/2f`) | 0.30 m |
+| `A` | 42 000 m | stated 42 000 m, substituted 84 000 m | 75 000 m |
+| `δ_z` | ~36 m (fraction gives 37.6) | ~0.92 m published; ~3.7 m from stated values | ~1.30 m (exact) |
 | Reach | ~3 km | pyramid interior | "several km" |
 
 Note the assumed propagation speed also differs by a factor of ~6 between the volcanic edifice and the limestone/granite pyramid — the medium, not just the frequency, sets `λ`.
+
+Note also that only two of the three chains are arithmetically sound. Vesuvius and the patent substitute their own stated `v`, `f` and `A`; the Giza paper substitutes `2f` for `f` and `2A` for `A`, which is why its cell is four times finer than its own parameters allow. Full errata in ch04.
 
 ## Key Concepts
 - **Cap / plug** — a vibrational-energy singularity below the main crater, read as denser material blocking the main conduit; also seen as "cooled compact lava" forming a blockage mass.
@@ -84,7 +86,7 @@ Take Figure 13 (a)/(b), the pure-range line chosen as the robustness stress test
 - **Trusting the foreshortened side of a range-oriented tomogram.** The study demonstrates it is measurably worse; treat features there as unconfirmed.
 
 ## Key Takeaways
-1. `δ_z` at Vesuvius is ~36 m — about 40x coarser than Giza's ~0.92 m, by design, to reach 3 km depth.
+1. `δ_z` at Vesuvius is ~36 m — about 40x coarser than Giza's published ~0.92 m (10x coarser than the ~3.7 m the Giza parameters actually imply), by design, to reach 3 km depth.
 2. Investigation frequency is the depth/resolution knob; the medium's propagation speed sets the rest.
 3. Line orientation is a *processing* parameter — multiple orientations from one SLC image, no re-acquisition.
 4. Layover images better than foreshortening for this method; site the target accordingly.
