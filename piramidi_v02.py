@@ -5643,7 +5643,19 @@ $('note').innerHTML = b.resolves
     'di cavita\'. I voxel sono colorati per indice di pieno/vuoto (energia del '+
     'periodogramma &times; coerenza &times; (1 &minus; micro-moto)), che incorpora '+
     'il micro-moto ma resta lo stesso tipo di discriminante, non una rilevazione '+
-    'risolta in profondita\'. '+D.n_fixes+' correzioni applicate rispetto alla versione precedente.';
+    'risolta in profondita\'. '+D.n_fixes+' correzioni applicate rispetto alla versione precedente.'+
+    '<span style="display:block;margin-top:10px">'+
+    '<b>Un errore nelle fonti.</b> La cella di 0,92 m dell\'articolo di Giza non '+
+    'segue dai parametri che l\'articolo stesso dichiara: fissa la frequenza di '+
+    'indagine a 12.500 Hz e poi scrive &lambda; = v/f = 6000/25.000, cioe\' divide '+
+    'per 2f; dichiara l\'apertura orbitale &laquo;circa 42.000 m&raquo; e poi mette '+
+    '2&times;84.000 al denominatore, il doppio. Rifacendo &delta;z = &lambda;R/(2A) '+
+    'con i valori dichiarati viene 3,7 m, quattro volte piu\' grossolano, e il '+
+    'paragrafo 5.2 ne dichiara una terza ancora, 1 m per pixel. Le catene del '+
+    'preprint del Vesuvio (36 m) e del brevetto (1,30 m) tornano invece riga per '+
+    'riga. Verificato sui PDF; gli 0,92 m vanno citati come la costante con cui '+
+    'l\'articolo ha scalato le sue figure, non come un risultato che i suoi '+
+    'parametri sostengono.</span>';
 
 /* ---------- avvio ---------- */
 resize(); resetView(); legend(); legendVox();
