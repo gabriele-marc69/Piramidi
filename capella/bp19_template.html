@@ -234,7 +234,7 @@ function draw(resetCamera) {
   $("dims").textContent = p.H + " / " + p.side + " m";
   $("cube").textContent = fmt(p.cs, 2) + " m";
   $("dzTxt").textContent = fmt(p.dz, 2) + " m";
-  $("zbTxt").textContent = p.zb + " m sotto la base";
+  $("zbTxt").textContent = p.zb + " m sotto la base" + (p.zmax ? ", " + fmt(p.zmax, 1) + " m dalla superficie" : "");
   $("nPos").textContent = p.npos.toLocaleString("it-IT") + " (" + fmt(p.pos * 100, 1) + " %)";
   $("peak").textContent = p.peak ? "R² " + p.peak.R2_corretto.toFixed(4) + " a E " + p.peak.est_m + ", N " + p.peak.nord_m +
     ", profondita' " + p.peak.profondita_massimo_m + " m" : "nessuna cella positiva";

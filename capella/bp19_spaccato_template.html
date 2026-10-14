@@ -257,7 +257,7 @@ function drawSection() {
   const [ax, ay] = line.a, [bx, by] = line.b, L = Math.hypot(bx - ax, by - ay);
   if (L < p.cs) { $("lineInfo").textContent = "Retta di " + fmt(L, 1) + " m, meno di un cubo (" + fmt(p.cs, 2) + " m)"; Plotly.purge("sect"); return; }
   const ux = (bx - ax) / L, uy = (by - ay) / L, ns = Math.ceil(L / p.cs) + 1;
-  const nzz = Math.ceil((p.H + p.zb) / p.cs), S = [], Zc = [];
+  const zlo = Math.min(p.zb, p.zmax || p.zb), nzz = Math.ceil((p.H + zlo) / p.cs), S = [], Zc = [];
   for (let k = 0; k < ns; k++) S.push(k * L / (ns - 1));
   for (let m = 0; m < nzz; m++) Zc.push(p.H - (m + 0.5) * p.cs);
   const V = Zc.map(() => new Array(ns).fill(null)), Dm = Zc.map(() => new Array(ns).fill(null)), surf = [];
@@ -268,7 +268,7 @@ function drawSection() {
     const cap = capOf(p, c); surf.push(cap);
     for (let m = 0; m < nzz; m++) {
       const zc = Zc[m];
-      if (zc > cap || zc < -p.zb) continue;
+      if (zc > cap || zc < -zlo || cap - zc > p.zmax) continue;
       const i = Math.floor((cap - zc) / p.cs);
       if (i >= p.nz) continue;
       const o = c * p.nz + i;
@@ -301,7 +301,7 @@ function drawSection() {
     by.toFixed(1) + " m; lunghezza " + L.toFixed(1) + " m; azimut " + az.toFixed(1) + "°; R² medio " + (cnt ? (sum / cnt).toFixed(4) : "-");
   Plotly.react("sect", tr, Object.assign({}, DARK, { margin: { l: 55, r: 10, t: 10, b: 45 }, showlegend: false,
     xaxis: Object.assign(axs("distanza da A [m]"), { range: [0, L] }),
-    yaxis: Object.assign(axs("quota z [m]"), { range: [-p.zb, p.H + 3] }) }), { displaylogo: false, responsive: true });
+    yaxis: Object.assign(axs("quota z [m]"), { range: [-zlo, p.H + 3] }) }), { displaylogo: false, responsive: true });
 }
 
 function redraw(newPyr) {

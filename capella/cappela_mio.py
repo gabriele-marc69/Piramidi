@@ -21,8 +21,8 @@
    8. Visualizzazione e salvataggio    [Fig. 29-38b]
 
  Uso:
-   python deepseek_python_cappella_mio.py --cphd input.cphd --out output/
-   python deepseek_python_cappella_mio.py --demo          # genera dati sintetici
+   python cappela_mio.py --cphd input.cphd --out output/
+   python cappela_mio.py --demo          # genera dati sintetici
 =============================================================================
 """
 
@@ -2526,6 +2526,20 @@ def bp19_layer_integral(z: np.ndarray, layers=BP19["layers"]) -> np.ndarray:
     return out
 
 
+def bp19_depth_limit(rate: np.ndarray, layers=BP19["layers"]) -> float:
+    """Profondita' massima leggibile [m]: il fit ha coefficienti liberi, quindi conta solo
+    la rotazione per coppia dG I(z) (dG = passo di G tra coppie vicine). Oltre dG I = pi
+    la rotazione si ripiega (I e 2 pi / dG - I danno lo stesso R^2): dG massimo, I(z) = pi / dG."""
+    target = np.pi / float(np.abs(np.diff(rate, axis=0)).max())
+    top, acc = 0.0, 0.0
+    for bottom, length in layers:
+        span = np.inf if bottom is None else bottom - top
+        if acc + span / length >= target:
+            return top + (target - acc) * length
+        acc += span / length; top = bottom
+    return top
+
+
 def bp19_rate(b, t, r, inc_deg) -> np.ndarray:
     """focus.time_variant_rate: G = 4 pi dB / (r sin(theta)) / dt * t, array [K, N]."""
     db = np.empty_like(b); dt = np.empty_like(t)
@@ -2975,17 +2989,21 @@ def bp19_volume(logger: logging.Logger, name: str, out_dir: str, meta: dict, e: 
     spacing = np.array(meta["spacing_range_azimuth_m"])
     z0, dz = BP19["depth"]
     zb = BP19["below_base_m"]
-    depths = np.round(z0 + np.arange(int(np.floor((H + zb - z0) / dz + 1e-9)) + 1) * dz, 12)
+    zmax = bp19_depth_limit(rate)                        # oltre, il fit ripete le profondita' minori
+    zend = min(H + zb, zmax)
+    depths = np.round(z0 + np.arange(int(np.floor((zend - z0) / dz + 1e-9)) + 1) * dz, 12)
     integral = bp19_layer_integral(depths)
-    nz = int(np.floor((H + zb) / cs)) + 1
+    nz = int(np.floor(zend / cs)) + 1
     cid = np.floor(depths / cs).astype(int)
     vol = np.zeros((n_col, n_col, nz), np.float32)       # [iE, iN, cubo dalla superficie]
     kmax = np.zeros((n_col, n_col, nz), np.uint16)       # indice in depths del massimo del cubo
     mid_line = len(lines) // 2
+    logger.info(f"  profondita' massima leggibile dai dati: {zmax:.1f} m dalla superficie "
+                f"(passo di G tra coppie {np.abs(np.diff(rate, axis=0)).max():.4e} rad)")
     logger.info(f"  fit: profondita' {z0}..{depths[-1]:.2f} m (passo {dz}), fino a {zb:.0f} m "
-                f"sotto la base; {nz} cubi per colonna")
+                f"sotto la base e {zmax:.1f} m dalla superficie; {nz} cubi per colonna")
     for li, iN in enumerate(lines):
-        nd = int(np.searchsorted(depths, H * (1 - abs(e[iN]) / half) + zb, side="right"))
+        nd = int(np.searchsorted(depths, min(H * (1 - abs(e[iN]) / half) + zb, zmax), side="right"))
         sl = slice(li * n_col, (li + 1) * n_col)
         r = bp19_fit(q[sl], spacing, rate[:, sl], integral[:nd], bank["W"],
                      BP19["pixel_support"], BP19["axis_ratio_min"])
@@ -3000,7 +3018,7 @@ def bp19_volume(logger: logging.Logger, name: str, out_dir: str, meta: dict, e: 
             logger.info(f"    linea {li + 1}/{len(lines)}  ({el:.0f} s, restano "
                         f"~{el / (li + 1) * (len(lines) - li - 1):.0f} s)")
     cap = H * (1 - np.maximum(np.abs(e)[:, None], np.abs(e)[None, :]) / half)   # [iE, iN]
-    valid = np.arange(nz)[None, None, :] * cs < cap[..., None] + zb   # fino a zb sotto la base
+    valid = np.arange(nz)[None, None, :] * cs < np.minimum(cap[..., None] + zb, zmax)
     vol[~valid] = 0
     lab = (f"{name.capitalize()} - linea E-O a N {e[central['iN']]:+.1f} m - v1.9 - "
            f"K={bank['K']}, W={bank['W']}, P={BP19['pixel_support']}")
@@ -3030,12 +3048,11 @@ def bp19_volume(logger: logging.Logger, name: str, out_dir: str, meta: dict, e: 
                   copertura={"posizioni": int(n_col * len(lines)), "coppie": int(bank["K"]),
                              "finestre": int(bank["K"] - bank["W"] + 1),
                              "profondita": int(len(depths))},
+                  profondita_max_leggibile_m=round(zmax, 2),
                   cubi_positivi_frazione=round(float((done[valid[:, lines]] > 0).mean()), 4),
                   picco=peak,
                   corrispondenza_parti_note=match,
-                  durata_fit_s=round(time.time() - t_start, 1),
-                  nota="i punteggi di profondita' non provano vuoti, penetrazione o profondita' "
-                       "assolute (README del pacchetto); l'R^2 corretto non e' una densita'")
+                  durata_fit_s=round(time.time() - t_start, 1))
     with open(os.path.join(out_dir, "report.json"), "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2, ensure_ascii=False)
     logger.info(f"  {name}: cubi positivi {report['cubi_positivi_frazione'] * 100:.1f} %, "
@@ -3049,7 +3066,7 @@ def bp19_volume(logger: logging.Logger, name: str, out_dir: str, meta: dict, e: 
     idx = np.flatnonzero(vox).astype(np.uint32)          # solo i cubi con R^2 > 0
     b64 = lambda a: base64.b64encode(np.ascontiguousarray(a, a.dtype.newbyteorder("<")).tobytes()).decode("ascii")
     return {"name": name, "label": name.capitalize(), "side": round(2 * half, 1), "H": H,
-            "n_col": n_col, "cs": cs, "nz": nz, "zb": zb, "lines": len(lines),
+            "n_col": n_col, "cs": cs, "nz": nz, "zb": zb, "zmax": round(zmax, 1), "lines": len(lines),
             "z0": z0, "dz": dz, "vox_idx_b64": b64(idx), "vox_val_b64": b64(vox[idx]),
             "vox_dep_b64": b64(kmax.ravel()[idx]),
             "png_b64": png, "known": known, "match": match, "K": bank["K"], "W": bank["W"],
