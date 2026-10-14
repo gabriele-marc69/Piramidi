@@ -20,6 +20,7 @@ ricostruite**, e la ragione è geometrica, non algoritmica.
 | `piramidi_v01.py` | prima versione, ancora usata come libreria (lettura annotation, deramping TOPS, blocchi 2-7 delle fonti) |
 | `scarica_ghiza_cdse.py` | scarico selettivo da CDSE: prende i 5 file utili di ogni `.SAFE` invece del prodotto intero (~1.5 GB per data invece di ~8 GB) |
 | `piramide_cheope_3d.py`, `piramide_kefren_3d.py`, `piramide_3d_comune.py` | rendering 3D delle singole piramidi |
+| `capella/deepseek_python_cappella_mio.py` | piramidi da **Capella** (due CPHD spotlight, Capella Open Data): retroproiezione su GPU e **Biondi Protocol v1.9** (`--bp19`), cubi di R² dalla superficie fino a 300 m sotto la base, pagine 3D e spaccato — vedi [`capella/README.md`](capella/README.md) |
 
 ### Uso
 

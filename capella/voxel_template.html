@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="it" class="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Voxel 3D delle piramidi</title>
+<script src="https://cdn.tailwindcss.com"></script>
+__PLOTLY__
+<style>
+  :root {
+    --background: #09090b; --foreground: #fafafa;
+    --card: #111114; --border: #27272a; --muted: #a1a1aa;
+    --primary: #38bdf8; --ring: #38bdf8;
+  }
+  body { background: var(--background); color: var(--foreground); }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: .75rem; }
+  .tab[aria-selected="true"] { background: var(--primary); color: #04202c; }
+  .tab:focus-visible, input:focus-visible, button:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+  input[type=range] { accent-color: var(--primary); height: 1.5rem; }
+</style>
+</head>
+<body class="min-h-screen">
+<main class="mx-auto max-w-7xl px-4 py-6">
+  <header class="mb-4">
+    <h1 class="text-2xl font-semibold tracking-tight" id="title"></h1>
+    <p class="mt-1 text-sm" style="color:var(--muted)">
+      Per ogni colonna: il pixel dove il radar vede la superficie (con il layover), un valore (reale, immaginario) per ogni cubo di altezza
+      con shift di 1 tra master e slave, vettori di spostamento applicati a una massa 1 su molla smorzata sugli assi
+      Nord-Sud ed Est-Ovest, onde sommate e filtrate passa-basso. L'onda scende in verticale dalla superficie del
+      pixel: i tiri sono distribuiti su tutta l'altezza della piramide e un ciclo della molla copre l'altezza; sotto,
+      l'onda continua smorzata fino a 100 m sotto il livello zero. Voxel cubici visibili sotto il valore scelto.
+      Metodo ritirato (10 agosto 2026): risultati non verificati.
+    </p>
+  </header>
+
+  <div role="tablist" aria-label="Piramide" class="mb-4 flex flex-wrap gap-2" id="tabs"></div>
+
+  <div class="grid gap-4 lg:grid-cols-[320px_1fr]">
+    <section class="card p-4 space-y-5" aria-label="Controlli">
+      <div>
+        <label for="thr" class="flex items-baseline justify-between text-sm font-medium">
+          <span>Valore del passa-basso</span>
+          <output id="thrOut" class="tabular-nums" style="color:var(--primary)"></output>
+        </label>
+        <input id="thr" type="range" min="0" max="100" step="1" value="10" class="mt-2 w-full">
+        <p class="mt-1 text-xs" style="color:var(--muted)">Si vedono i voxel con ampiezza delle onde filtrate, &radic;(E-O&sup2; + N-S&sup2;), SOTTO il valore (in % del 99.5&deg; percentile della piramide; cursore quadratico, piu' fine sui valori bassi).</p>
+        <p id="lpfHelp" class="mt-1 text-xs" style="color:var(--muted)"></p>
+      </div>
+      <div>
+        <label for="kcol" class="flex items-baseline justify-between text-sm font-medium">
+          <span>Massimo per colonna</span>
+          <output id="kOut" class="tabular-nums" style="color:var(--primary)"></output>
+        </label>
+        <input id="kcol" type="range" min="1" max="30" step="1" value="25" class="mt-2 w-full">
+        <p class="mt-1 text-xs" style="color:var(--muted)">In ogni colonna verticale si vedono al massimo questi cubi: quelli con il valore filtrato piu' basso della colonna (e sotto il valore scelto sopra).</p>
+      </div>
+      <div>
+        <label for="shift" class="flex items-baseline justify-between text-sm font-medium">
+          <span>Spostamento verticale</span>
+          <output id="shiftOut" class="tabular-nums" style="color:var(--primary)"></output>
+        </label>
+        <input id="shift" type="range" min="-100" max="100" step="1" value="0" class="mt-2 w-full">
+        <p class="mt-1 text-xs" style="color:var(--muted)">Sposta in alto (+) o in basso (-) tutti i voxel, a passi di un cubo. Il piano, il contorno della piramide e le parti note restano fermi. A 0 l'onda di ogni colonna parte dalla superficie della piramide.</p>
+      </div>
+      <div id="matchBox" class="rounded-md border p-3 text-sm space-y-2" style="border-color:var(--border)" aria-live="polite">
+        <div class="font-medium">Corrispondenza con le parti note</div>
+        <div class="flex justify-between"><span style="color:var(--muted)">Cubi visibili dentro</span><span id="mHits" class="tabular-nums"></span></div>
+        <div class="flex justify-between"><span style="color:var(--muted)">Attesi per caso</span><span id="mExp" class="tabular-nums"></span></div>
+        <div class="flex justify-between"><span style="color:var(--muted)">z</span><span id="mZ" class="tabular-nums"></span></div>
+        <p id="mBest" class="text-xs" style="color:var(--muted)"></p>
+        <button id="goBest" type="button" class="rounded-md border px-3 py-1.5 text-sm font-medium" style="border-color:var(--border)">Vai al massimo della ricerca</button>
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <input id="norm" type="checkbox" class="h-4 w-4">
+          <label for="norm" class="text-sm">Normalizza per profondita'</label>
+        </div>
+        <p class="mt-1 text-xs" style="color:var(--muted)">A ogni distanza dalla superficie divide l'ampiezza per il suo rms su tutte le colonne della piramide: toglie l'andamento con la profondita' (somma dei tiri e smorzamento).</p>
+      </div>
+      <div class="flex items-center gap-2">
+        <input id="outline" type="checkbox" checked class="h-4 w-4">
+        <label for="outline" class="text-sm">Contorno della piramide</label>
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <input id="known" type="checkbox" checked class="h-4 w-4">
+          <label for="known" class="text-sm">Parti note</label>
+        </div>
+        <p id="knownHelp" class="mt-1 text-xs" style="color:var(--muted)"></p>
+      </div>
+      <div class="rounded-md border p-3 text-sm space-y-1" style="border-color:var(--border)" aria-live="polite">
+        <div class="flex justify-between"><span style="color:var(--muted)">Voxel disegnati</span><span id="nShown" class="tabular-nums"></span></div>
+        <div class="flex justify-between"><span style="color:var(--muted)">Voxel nel file (max 30 per colonna)</span><span id="nTot" class="tabular-nums"></span></div>
+        <div class="flex justify-between"><span style="color:var(--muted)">Lato del cubo</span><span id="cube" class="tabular-nums"></span></div>
+        <div class="flex justify-between"><span style="color:var(--muted)">H / base / z min</span><span id="dims" class="tabular-nums"></span></div>
+      </div>
+    </section>
+
+    <section class="card p-2" aria-label="Grafico 3D">
+      <div id="plot" style="width:100%; height:72vh; min-height:420px"></div>
+    </section>
+  </div>
+</main>
+
+<script>
+const D = __DATA__;
+const $ = id => document.getElementById(id);
+document.title = D.title;
+$("title").textContent = D.title;
+
+function b64ToU8(b) {
+  const s = atob(b), a = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) a[i] = s.charCodeAt(i);
+  return a;
+}
+const MAXC = 60000;                      // massimo di cubi disegnati (campione oltre)
+for (const p of D.pyramids) {
+  p.vox = b64ToU8(p.vox_b64);           // per cubo nel file (colonna, poi j dal fondo): ampiezza filtrata, a radice
+  p.nj = new Uint16Array(b64ToU8(p.nj_b64).buffer);   // cubi per colonna nel solido (0 = fuori scena)
+  p.nk = new Uint16Array(b64ToU8(p.nk_b64).buffer);   // cubi per colonna nel file (i 30 piu' bassi)
+  p.jj = new Uint16Array(b64ToU8(p.jj_b64).buffer);   // indice j dal fondo di ogni cubo nel file
+  p.lin = new Float32Array(256);        // q -> ampiezza / riferimento = 1.5 (q / 255)^2
+  for (let q = 0; q < 256; q++) p.lin[q] = 1.5 * (q / 255) ** 2;
+  p.ncol2 = p.n_col * p.n_col;
+  p.off = new Uint32Array(p.ncol2 + 1);  // primo cubo di ogni colonna nell'array vox
+  for (let c = 0; c < p.ncol2; c++) p.off[c + 1] = p.off[c] + p.nk[c];
+  p.cs = p.dstep;                       // lato del cubo = passo della griglia (pixel), anche in z
+  p.shift = 0;                          // spostamento verticale [cubi]
+  if (p.match) {                        // griglia delle parti note: colonne nel loro riquadro x celle m
+    const m = p.match;
+    m.cols = new Uint32Array(b64ToU8(m.cols_b64).buffer);
+    m.occ = b64ToU8(m.occ_b64);
+    m.reg = new Int32Array(p.ncol2).fill(-1);
+    m.cols.forEach((c, r) => { m.reg[c] = r; });
+    m.P = new Uint32Array(m.cols.length * (m.nm + 1));   // somme cumulate per colonna
+    for (let r = 0; r < m.cols.length; r++)
+      for (let i = 0; i < m.nm; i++) m.P[r * (m.nm + 1) + i + 1] = m.P[r * (m.nm + 1) + i] + m.occ[r * m.nm + i];
+  }
+}
+
+// cubo unitario: 8 vertici (+-1) e 12 triangoli
+const CV = [[-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]];
+const CT = [0,1,2, 0,2,3, 4,6,5, 4,7,6, 0,4,5, 0,5,1, 1,5,6, 1,6,2, 2,6,7, 2,7,3, 3,7,4, 3,4,0];
+
+let cur = 0;
+const tabs = $("tabs");
+D.pyramids.forEach((p, i) => {
+  const b = document.createElement("button");
+  b.type = "button"; b.role = "tab"; b.className = "tab rounded-md border px-3 py-1.5 text-sm font-medium";
+  b.style.borderColor = "var(--border)"; b.textContent = p.label;
+  b.setAttribute("aria-selected", i === 0 ? "true" : "false");
+  b.addEventListener("click", () => { cur = i; for (const t of tabs.children) t.setAttribute("aria-selected", "false"); b.setAttribute("aria-selected", "true"); draw(true); });
+  tabs.appendChild(b);
+});
+
+function outlineTrace(p) {
+  const h = p.side / 2, H = p.H;
+  const c = [[-h,-h,0],[h,-h,0],[h,h,0],[-h,h,0]];
+  const x = [], y = [], z = [];
+  const add = (a, b) => { x.push(a[0], b[0], null); y.push(a[1], b[1], null); z.push(a[2], b[2], null); };
+  for (let i = 0; i < 4; i++) { add(c[i], c[(i + 1) % 4]); add(c[i], [0, 0, H]); }
+  if (p.zmin < 0) for (let i = 0; i < 4; i++) {            // prisma sotto il livello zero
+    const d = [c[i][0], c[i][1], p.zmin], e = [c[(i + 1) % 4][0], c[(i + 1) % 4][1], p.zmin];
+    add(c[i], d); add(d, e);
+  }
+  return { type: "scatter3d", mode: "lines", x, y, z, hoverinfo: "skip", showlegend: false,
+           line: { color: "#a1a1aa", width: 3 } };
+}
+
+// parti note: wireframe (segmenti) per struttura + etichetta al centro
+function knownTraces(p) {
+  const tr = [], cx = [], cy = [], cz = [], tx = [];
+  for (const s of p.known) {
+    const x = [], y = [], z = [];
+    for (let i = 0; i + 5 < s.seg.length; i += 6) {
+      x.push(s.seg[i], s.seg[i + 3], null); y.push(s.seg[i + 1], s.seg[i + 4], null); z.push(s.seg[i + 2], s.seg[i + 5], null);
+    }
+    tr.push({ type: "scatter3d", mode: "lines", x, y, z, hoverinfo: "skip", showlegend: false,
+              line: { color: s.color || "#4ade80", width: 6 } });
+    if (s.c) {
+      cx.push(s.c[0]); cy.push(s.c[1]); cz.push(s.c[2]);
+      tx.push(s.n + ". " + s.name + " (" + s.cat + ")" + (s.schem ? " - schematica" : "") +
+              "<br>incertezza ±" + s.inc + " m<br>" + s.fonte);
+    }
+  }
+  tr.push({ type: "scatter3d", mode: "markers", x: cx, y: cy, z: cz, showlegend: false,
+            marker: { size: 3, color: "#bbf7d0", symbol: "diamond" }, hovertext: tx, hoverinfo: "text" });
+  return tr;
+}
+
+// per ogni colonna segna i K cubi con il valore piu' basso (a parita' di valore, i primi dal fondo)
+function lowestPerColumn(p, val, K) {
+  const sel = new Uint8Array(p.off[p.ncol2]), v = new Float32Array(4096), s = new Float32Array(4096);
+  for (let c = 0; c < p.ncol2; c++) {
+    const n = p.nk[c], o = p.off[c];
+    if (n <= K) { sel.fill(1, o, o + n); continue; }
+    for (let j = 0; j < n; j++) v[j] = s[j] = val(c, j);
+    const kth = s.subarray(0, n).sort()[K - 1];
+    let left = K;
+    for (let j = 0; j < n; j++) if (v[j] < kth) { sel[o + j] = 1; left--; }
+    for (let j = 0; j < n && left > 0; j++) if (v[j] === kth) { sel[o + j] = 1; left--; }
+  }
+  return sel;
+}
+
+// cursore quadratico: posizione 0..100 -> valore (frazione del riferimento) = (pos / 100)^2
+const thrVal = () => (parseFloat($("thr").value) / 100) ** 2;
+const showThr = () => { const t = thrVal(); $("thrOut").textContent = (t * 100).toFixed(t < 0.1 ? 2 : 1) + " %"; };
+
+function draw(resetCamera) {
+  const p = D.pyramids[cur];
+  const thr = thrVal(), norm = $("norm").checked;
+  showThr();
+  $("lpfHelp").textContent = "Passa-basso fisso: Butterworth a 4 poli avanti e indietro (fase zero, -6 dB al taglio), taglio " + p.lpf.toFixed(2) +
+    " rad/passo (meta' della Nyquist). I " + p.n + " tiri sono distribuiti sull'altezza " + p.H + " m (uno ogni " +
+    p.dz.toFixed(2) + " m sotto la superficie) e la molla fa un ciclo ogni " + p.n + " passi, cioe' sull'altezza; " +
+    "l'onda di ogni tiro si dimezza ogni " + p.half + " m e scende fino a z " + p.zmin + " m.";
+  $("dims").textContent = p.H + " / " + p.side + " / " + p.zmin + " m";
+  $("cube").textContent = p.cs.toFixed(2) + " m";
+
+  // voxel cubici: per ogni colonna, cubi j = 0..nj-1 di lato cs dal fondo (zmin) alla superficie,
+  // centro zc = zmin + (j + 0.5) cs; il valore e' l'ampiezza dell'onda verticale al centro del cubo.
+  // Nel file ci sono solo i 30 cubi piu' bassi di ogni colonna: i = 0..nk-1, j = jj[off + i]
+  const half = p.side / 2, x0 = -half, h = p.cs / 2;
+  const val = (c, i) => p.lin[p.vox[p.off[c] + i]] * (norm ? p.gain[p.nj[c] - 1 - p.jj[p.off[c] + i]] : 1);
+  const kcol = parseInt($("kcol").value), key = (norm ? "n" : "a") + kcol;
+  $("kOut").textContent = kcol + " cubi";
+  if (p.selKey !== key) { p.sel = lowestPerColumn(p, val, kcol); p.selKey = key; }   // in cache
+  const total = p.off[p.ncol2];
+  const sh = p.shift, M = p.match;
+  $("shift").min = -p.s_max; $("shift").max = p.s_max; $("shift").value = sh;
+  $("shiftOut").textContent = (sh >= 0 ? "+" : "") + (sh * p.cs).toFixed(1) + " m";
+  let match = 0, hits = 0, expd = 0;
+  for (let c = 0; c < p.ncol2; c++) {
+    const r = M ? M.reg[c] : -1;
+    let kc = 0;
+    for (let i = 0; i < p.nk[c]; i++) if (p.sel[p.off[c] + i] && val(c, i) < thr) {
+      match++;
+      if (r >= 0) { kc++; const m = p.jj[p.off[c] + i] + sh - M.m0; if (m >= 0 && m < M.nm && M.occ[r * M.nm + m]) hits++; }
+    }
+    if (r >= 0 && kc) {                 // atteso: gli stessi kc cubi messi a caso nella colonna
+      const b = r * (M.nm + 1), lo = Math.min(M.nm, Math.max(0, sh - M.m0)), hi = Math.min(M.nm, Math.max(0, p.nj[c] + sh - M.m0));
+      expd += kc / p.nj[c] * (M.P[b + hi] - M.P[b + lo]);
+    }
+  }
+  $("matchBox").hidden = !M;
+  if (M) {
+    $("mHits").textContent = hits.toLocaleString("it-IT");
+    $("mExp").textContent = expd.toFixed(1);
+    $("mZ").textContent = expd > 0 ? ((hits - expd) / Math.sqrt(expd)).toFixed(2) : "-";
+    $("mBest").textContent = "Ricerca su K = 1..30 e spostamento ±" + (p.s_max * p.cs).toFixed(0) +
+      " m (valore al massimo): z massimo " + M.z + " con K = " + M.K + " e spostamento " +
+      (M.shift >= 0 ? "+" : "") + (M.shift * p.cs).toFixed(1) + " m (" + M.hits + " dentro, attesi " + M.exp +
+      "). p corretto per tutta la ricerca = " + M.p + " (" + M.n_null + " controlli con lo schema traslato in orizzontale).";
+  }
+  const keep = Math.min(1, MAXC / Math.max(1, match));
+  const nmax = Math.min(match, MAXC + 1000);
+  const X = new Float32Array(8 * nmax), Y = new Float32Array(8 * nmax), Z = new Float32Array(8 * nmax), C = new Float32Array(8 * nmax);
+  const I = new Int32Array(12 * nmax), J = new Int32Array(12 * nmax), K = new Int32Array(12 * nmax);
+  let q = 0;
+  for (let c = 0; c < p.ncol2 && q < nmax; c++) {
+    const ex = x0 + Math.floor(c / p.n_col) * p.dstep, ny = x0 + (c % p.n_col) * p.dstep;
+    for (let i = 0; i < p.nk[c] && q < nmax; i++) {
+      if (!p.sel[p.off[c] + i]) continue;
+      const j = p.jj[p.off[c] + i], zc = p.zmin + (j + 0.5 + sh) * p.cs, v = val(c, i);
+      if (v >= thr) continue;
+      if (keep < 1 && ((Math.imul(c * 977 + j, 2654435761) >>> 0) / 4294967296) >= keep) continue;
+      for (let s = 0; s < 8; s++) {
+        X[8 * q + s] = ex + CV[s][0] * h; Y[8 * q + s] = ny + CV[s][1] * h; Z[8 * q + s] = zc + CV[s][2] * h; C[8 * q + s] = v;
+      }
+      for (let s = 0; s < 12; s++) {
+        I[12 * q + s] = 8 * q + CT[3 * s]; J[12 * q + s] = 8 * q + CT[3 * s + 1]; K[12 * q + s] = 8 * q + CT[3 * s + 2];
+      }
+      q++;
+    }
+  }
+  $("nShown").textContent = q.toLocaleString("it-IT") +
+    (keep < 1 ? " di " + match.toLocaleString("it-IT") + " (campione)" : "");
+  $("nTot").textContent = total.toLocaleString("it-IT");
+
+  const vox = { type: "mesh3d", x: X.subarray(0, 8 * q), y: Y.subarray(0, 8 * q), z: Z.subarray(0, 8 * q),
+    i: I.subarray(0, 12 * q), j: J.subarray(0, 12 * q), k: K.subarray(0, 12 * q),
+    intensity: C.subarray(0, 8 * q), colorscale: "Jet", cmin: 0, cmax: Math.max(thr, 1e-3), flatshading: true,
+    lighting: { ambient: 0.6, diffuse: 0.7, specular: 0.05, roughness: 0.9 }, showlegend: false,
+    colorbar: { title: { text: "ampiezza", font: { color: "#a1a1aa" } }, thickness: 12, len: 0.6, tickfont: { color: "#a1a1aa" } },
+    hovertemplate: "E %{x:.1f} m<br>N %{y:.1f} m<br>z %{z:.1f} m<br>amp %{intensity:.3f}<extra></extra>" };
+  const hasKnown = p.known.length > 0;
+  $("knownHelp").textContent = hasKnown
+    ? p.known.length + " strutture note (wireframe da letteratura, non dai dati SAR)"
+    : "nessuna parte nota disponibile per questa piramide";
+  $("known").disabled = !hasKnown;
+  let traces = $("outline").checked ? [outlineTrace(p), vox] : [vox];
+  if (hasKnown && $("known").checked) traces = traces.concat(knownTraces(p));
+  const ax = t => ({ title: { text: t, font: { color: "#a1a1aa" } }, color: "#a1a1aa", gridcolor: "#27272a", zerolinecolor: "#27272a", backgroundcolor: "rgba(0,0,0,0)" });
+  const layout = { margin: { l: 0, r: 0, t: 0, b: 0 }, paper_bgcolor: "rgba(0,0,0,0)",
+    scene: { xaxis: ax("Est [m]"), yaxis: ax("Nord [m]"), zaxis: ax("quota z [m]"), aspectmode: "data",
+             bgcolor: "rgba(0,0,0,0)" } };
+  if (!resetCamera && $("plot").layout && $("plot").layout.scene) layout.scene.camera = $("plot").layout.scene.camera;
+  Plotly.react("plot", traces, layout, { responsive: true, displaylogo: false });
+}
+// il ridisegno dei cubi richiede circa un secondo: il cursore aggiorna il valore mentre si
+// trascina e ridisegna al rilascio
+$("thr").addEventListener("input", showThr);
+$("thr").addEventListener("change", () => draw(false));
+$("kcol").addEventListener("input", () => { $("kOut").textContent = $("kcol").value + " cubi"; });
+$("kcol").addEventListener("change", () => draw(false));
+$("shift").addEventListener("input", () => { const p = D.pyramids[cur], s = parseInt($("shift").value);
+  $("shiftOut").textContent = (s >= 0 ? "+" : "") + (s * p.cs).toFixed(1) + " m"; });
+$("shift").addEventListener("change", () => { D.pyramids[cur].shift = parseInt($("shift").value); draw(false); });
+$("goBest").addEventListener("click", () => {
+  const p = D.pyramids[cur];
+  if (!p.match) return;
+  p.shift = p.match.shift; $("kcol").value = p.match.K; $("thr").value = 100;
+  draw(false);
+});
+for (const id of ["norm", "outline", "known"]) $(id).addEventListener("change", () => draw(false));
+draw(true);
+</script>
+</body>
+</html>

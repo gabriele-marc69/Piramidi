@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="it" class="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Biondi Protocol v1.9</title>
+<script src="https://cdn.tailwindcss.com"></script>
+__PLOTLY__
+<style>
+  :root {
+    --background: #09090b; --foreground: #fafafa;
+    --card: #111114; --border: #27272a; --muted: #a1a1aa;
+    --primary: #facc15; --ring: #facc15;
+  }
+  body { background: var(--background); color: var(--foreground); }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: .75rem; }
+  .tab[aria-selected="true"] { background: var(--primary); color: #2b2100; }
+  .tab:focus-visible, input:focus-visible, button:focus-visible, a:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+  input[type=range] { accent-color: var(--primary); height: 1.5rem; }
+</style>
+</head>
+<body class="min-h-screen">
+<main class="mx-auto max-w-7xl px-4 py-6">
+  <header class="mb-4 flex flex-wrap items-baseline justify-between gap-2">
+    <h1 class="text-2xl font-semibold tracking-tight" id="title"></h1>
+    <a href="pyramids_bp19_spaccato.html" class="text-sm underline" style="color:var(--primary)">Spaccato verticale</a>
+  </header>
+
+  <p id="loader" hidden class="mb-4 text-sm" style="color:#f87171"></p>
+
+  <div role="tablist" aria-label="Piramide" class="mb-4 flex flex-wrap gap-2" id="tabs"></div>
+
+  <div class="grid gap-4 lg:grid-cols-[320px_1fr]">
+    <section class="card p-4 space-y-5" aria-label="Controlli">
+      <div>
+        <label for="thr" class="flex items-baseline justify-between text-sm font-medium">
+          <span>R&sup2; corretto minimo</span>
+          <output id="thrOut" class="tabular-nums" style="color:var(--primary)"></output>
+        </label>
+        <input id="thr" type="range" min="1" max="1000" step="1" value="200" class="mt-2 w-full">
+      </div>
+      <div>
+        <label for="kcol" class="flex items-baseline justify-between text-sm font-medium">
+          <span>Massimo per colonna</span>
+          <output id="kOut" class="tabular-nums" style="color:var(--primary)"></output>
+        </label>
+        <input id="kcol" type="range" min="1" max="30" step="1" value="25" class="mt-2 w-full">
+      </div>
+      <div>
+        <label for="cut" class="flex items-baseline justify-between text-sm font-medium">
+          <span>Togli dall'alto</span>
+          <output id="cutOut" class="tabular-nums" style="color:var(--primary)"></output>
+        </label>
+        <input id="cut" type="range" min="0" max="1" step="1" value="0" class="mt-2 w-full">
+      </div>
+      <div>
+        <label for="smin" class="flex items-baseline justify-between text-sm font-medium">
+          <span>Scala R&sup2; minimo</span>
+          <output id="sminOut" class="tabular-nums" style="color:var(--primary)"></output>
+        </label>
+        <input id="smin" type="range" min="0" max="1000" step="1" value="0" class="mt-2 w-full">
+        <label for="smax" class="mt-2 flex items-baseline justify-between text-sm font-medium">
+          <span>Scala R&sup2; massimo</span>
+          <output id="smaxOut" class="tabular-nums" style="color:var(--primary)"></output>
+        </label>
+        <input id="smax" type="range" min="0" max="1000" step="1" value="1000" class="mt-2 w-full">
+      </div>
+      <div class="flex items-center gap-2">
+        <input id="outline" type="checkbox" checked class="h-4 w-4">
+        <label for="outline" class="text-sm">Contorno della piramide</label>
+      </div>
+      <div>
+        <div class="flex items-center gap-2">
+          <input id="known" type="checkbox" checked class="h-4 w-4">
+          <label for="known" class="text-sm">Parti note</label>
+        </div>
+        <p id="knownHelp" class="mt-1 text-xs" style="color:var(--muted)"></p>
+      </div>
+      <div class="rounded-md border p-3 text-sm space-y-1" style="border-color:var(--border)" aria-live="polite">
+        <div class="flex justify-between"><span style="color:var(--muted)">Cubi disegnati</span><span id="nShown" class="tabular-nums"></span></div>
+        <div class="flex justify-between"><span style="color:var(--muted)">Cubi con R&sup2; &gt; 0</span><span id="nPos" class="tabular-nums"></span></div>
+        <div class="flex justify-between gap-2"><span style="color:var(--muted)">Picco</span><span id="peak" class="tabular-nums text-right"></span></div>
+        <div class="flex justify-between"><span style="color:var(--muted)">Lato del cubo</span><span id="cube" class="tabular-nums"></span></div>
+        <div class="flex justify-between"><span style="color:var(--muted)">Passo in profondita'</span><span id="dzTxt" class="tabular-nums"></span></div>
+        <div class="flex justify-between"><span style="color:var(--muted)">Fino a</span><span id="zbTxt" class="tabular-nums"></span></div>
+        <div class="flex justify-between"><span style="color:var(--muted)">H / base</span><span id="dims" class="tabular-nums"></span></div>
+      </div>
+      <p id="params" class="text-xs" style="color:var(--muted)"></p>
+    </section>
+
+    <section class="card p-2" aria-label="Grafico 3D">
+      <div id="plot" style="width:100%; height:72vh; min-height:420px"></div>
+    </section>
+  </div>
+
+  <section class="card mt-4 p-4" aria-label="Corrispondenza con le parti note">
+    <h2 class="text-base font-medium">Corrispondenza con le parti note</h2>
+    <div class="mt-3 overflow-x-auto"><table class="w-full text-sm tabular-nums" id="matchTab"></table></div>
+  </section>
+
+  <section class="card mt-4 p-4" aria-label="Tomogramma della linea centrale">
+    <h2 class="text-base font-medium" id="lineTitle"></h2>
+    <img id="linePng" alt="Tomogramma R² corretto lungo la linea Est-Ovest centrale" class="mt-3 w-full rounded-md">
+  </section>
+</main>
+
+<script>
+const DATA = __DATA__;
+const $ = id => document.getElementById(id);
+let D;
+
+async function loadData() {
+  const one = f => new Promise((res, rej) => {
+    window.bp19_dati = res;
+    const s = document.createElement("script");
+    s.src = f; s.onload = () => s.remove(); s.onerror = () => { s.remove(); rej(f); };
+    document.head.appendChild(s);
+  }).catch(() => fetch(f).then(r => { if (!r.ok) throw f; return r.text(); })
+    .then(t => JSON.parse(t.slice(t.indexOf("(") + 1, t.lastIndexOf(")")))));
+  const idx = await one(DATA);
+  for (const f of idx.files) {
+    for (const q of (await one(f)).parts) {
+      const p = idx.pyramids[q.p];
+      ((p._chunks = p._chunks || {})[q.f] = p._chunks[q.f] || [])[q.k] = q.s;
+    }
+  }
+  for (const p of idx.pyramids) { for (const f in p._chunks) p[f] = p._chunks[f].join(""); delete p._chunks; }
+  return idx;
+}
+
+function b64ToU8(b) {
+  const s = atob(b), a = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) a[i] = s.charCodeAt(i);
+  return a;
+}
+const MAXC = 60000;
+function init() {
+  document.title = D.title;
+  $("title").textContent = D.title;
+  for (const p of D.pyramids) {
+    const idx = new Uint32Array(b64ToU8(p.vox_idx_b64).buffer), val = new Uint16Array(b64ToU8(p.vox_val_b64).buffer);
+    const dep = new Uint16Array(b64ToU8(p.vox_dep_b64).buffer);
+    p.vox = new Uint16Array(p.n_col * p.n_col * p.nz); p.dep = new Uint16Array(p.vox.length);
+    for (let i = 0; i < idx.length; i++) { p.vox[idx[i]] = val[i]; p.dep[idx[i]] = dep[i]; }
+    p.npos = idx.length;
+    delete p.vox_idx_b64; delete p.vox_val_b64; delete p.vox_dep_b64;
+  }
+  D.pyramids.forEach((p, i) => {
+    const b = document.createElement("button");
+    b.type = "button"; b.role = "tab"; b.className = "tab rounded-md border px-3 py-1.5 text-sm font-medium";
+    b.style.borderColor = "var(--border)"; b.textContent = p.label;
+    b.setAttribute("aria-selected", i === 0 ? "true" : "false");
+    b.addEventListener("click", () => { cur = i; for (const t of tabs.children) t.setAttribute("aria-selected", "false"); b.setAttribute("aria-selected", "true"); draw(true); });
+    tabs.appendChild(b);
+  });
+}
+
+const CV = [[-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]];
+const CT = [0,1,2, 0,2,3, 4,6,5, 4,7,6, 0,4,5, 0,5,1, 1,5,6, 1,6,2, 2,6,7, 2,7,3, 3,7,4, 3,4,0];
+const SCALE = [[0,"#000000"],[0.15,"#4d4000"],[0.4,"#a68a00"],[0.7,"#e6c700"],[1,"#ffff00"]];
+const fmt = (v, d) => v.toFixed(d).replace(".", ",");
+
+let cur = 0;
+const tabs = $("tabs");
+
+function outlineTrace(p) {
+  const h = p.side / 2, H = p.H;
+  const c = [[-h,-h,0],[h,-h,0],[h,h,0],[-h,h,0]];
+  const x = [], y = [], z = [];
+  const add = (a, b) => { x.push(a[0], b[0], null); y.push(a[1], b[1], null); z.push(a[2], b[2], null); };
+  for (let i = 0; i < 4; i++) { add(c[i], c[(i + 1) % 4]); add(c[i], [0, 0, H]); }
+  return { type: "scatter3d", mode: "lines", x, y, z, hoverinfo: "skip", showlegend: false,
+           line: { color: "#a1a1aa", width: 3 } };
+}
+
+function knownTraces(p) {
+  const tr = [], cx = [], cy = [], cz = [], tx = [];
+  for (const s of p.known) {
+    const x = [], y = [], z = [];
+    for (let i = 0; i + 5 < s.seg.length; i += 6) {
+      x.push(s.seg[i], s.seg[i + 3], null); y.push(s.seg[i + 1], s.seg[i + 4], null); z.push(s.seg[i + 2], s.seg[i + 5], null);
+    }
+    tr.push({ type: "scatter3d", mode: "lines", x, y, z, hoverinfo: "skip", showlegend: false,
+              line: { color: s.color || "#4ade80", width: 6 } });
+    if (s.c) {
+      cx.push(s.c[0]); cy.push(s.c[1]); cz.push(s.c[2]);
+      tx.push(s.n + ". " + s.name + " (" + s.cat + ")" + (s.schem ? " - schematica" : "") +
+              "<br>incertezza ±" + s.inc + " m<br>" + s.fonte);
+    }
+  }
+  tr.push({ type: "scatter3d", mode: "markers", x: cx, y: cy, z: cz, showlegend: false,
+            marker: { size: 3, color: "#fafafa", symbol: "diamond" }, hovertext: tx, hoverinfo: "text" });
+  return tr;
+}
+
+function drawMatch() {
+  const p = D.pyramids[cur], t = $("matchTab");
+  if (!p.match || !p.match.length) { t.innerHTML = "<tr><td style='color:var(--muted)'>Nessuna parte nota per questa piramide.</td></tr>"; return; }
+  const esc = s => String(s).replace(/[&<>]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[ch]);
+  let h = "<thead><tr style='color:var(--muted)'><th class='text-left p-1'>#</th><th class='text-left p-1'>Struttura</th>" +
+          "<th class='text-right p-1'>celle</th><th class='text-right p-1'>R² medio</th><th class='text-right p-1'>controlli</th>" +
+          "<th class='text-right p-1'>cubi &gt; 0</th><th class='text-right p-1'>percentile</th><th class='text-right p-1'>p</th></tr></thead><tbody>";
+  for (const m of p.match) {
+    const hi = m.p < 0.05 ? " style='color:var(--primary)'" : "";
+    h += "<tr" + (m.n === 0 ? " class='font-semibold border-t' style='border-color:var(--border)'" : "") + "><td class='p-1'>" + (m.n || "") +
+         "</td><td class='p-1'>" + esc(m.nome) + "</td><td class='text-right p-1'>" + m.celle + "</td><td class='text-right p-1'>" +
+         m.R2_medio.toFixed(4) + "</td><td class='text-right p-1'>" + m.R2_medio_controlli.toFixed(4) + "</td><td class='text-right p-1'>" +
+         (m.frazione_positivi * 100).toFixed(1) + " %</td><td class='text-right p-1'>" + m.percentile.toFixed(1) +
+         "</td><td class='text-right p-1'" + hi + ">" + m.p.toFixed(4) + "</td></tr>";
+  }
+  t.innerHTML = h + "</tbody>";
+}
+
+const thrVal = () => parseFloat($("thr").value) / 1000;
+const showThr = () => { $("thrOut").textContent = fmt(thrVal(), 3); };
+const showCut = () => { const n = parseInt($("cut").value);
+  $("cutOut").textContent = n + " cubi = " + fmt(n * D.pyramids[cur].cs, 1) + " m"; };
+function scale() {
+  let a = parseInt($("smin").value), b = parseInt($("smax").value);
+  if (a >= b) { if (this === $("smin")) a = b - 1; else b = a + 1; }
+  if (a < 0) { a = 0; b = Math.max(b, 1); }
+  if (b > 1000) { b = 1000; a = Math.min(a, 999); }
+  $("smin").value = a; $("smax").value = b;
+  $("sminOut").textContent = fmt(a / 1000, 3); $("smaxOut").textContent = fmt(b / 1000, 3);
+  return [a / 1000, b / 1000];
+}
+
+function draw(resetCamera) {
+  const p = D.pyramids[cur];
+  const thr = Math.round(thrVal() * 65535), kcol = parseInt($("kcol").value);
+  const [cmin, cmax] = scale.call(null);
+  showThr();
+  $("kOut").textContent = kcol + " cubi";
+  $("dims").textContent = p.H + " / " + p.side + " m";
+  $("cube").textContent = fmt(p.cs, 2) + " m";
+  $("dzTxt").textContent = fmt(p.dz, 2) + " m";
+  $("zbTxt").textContent = p.zb + " m sotto la base";
+  $("nPos").textContent = p.npos.toLocaleString("it-IT") + " (" + fmt(p.pos * 100, 1) + " %)";
+  $("peak").textContent = p.peak ? "R² " + p.peak.R2_corretto.toFixed(4) + " a E " + p.peak.est_m + ", N " + p.peak.nord_m +
+    ", profondita' " + p.peak.profondita_massimo_m + " m" : "nessuna cella positiva";
+  $("params").textContent = "Banco: supporto Doppler " + p.S + " bin, SLC " + p.os + "x in azimuth, K = " + p.K +
+    ", maschera " + p.mask + ", separazione " + p.sep + ", passo " + p.step + ", W = " + p.W + ", P = " + p.P +
+    ", patch " + p.supp.join("x") + ", core " + p.core.join("x") + " px, errore del controllo " +
+    p.ctrl + " px, linee E-O " + p.lines + " di " + p.n_col + ".";
+  $("lineTitle").textContent = "Tomogramma della linea Est-Ovest a Nord " + (p.line_n >= 0 ? "+" : "") + p.line_n + " m";
+  $("linePng").src = "data:image/png;base64," + p.png_b64;
+
+  const half = p.side / 2, h = p.cs / 2, nz = p.nz;
+  $("cut").max = nz - 1;
+  const cut = parseInt($("cut").value);
+  showCut();
+  const sel = [];
+  const v = new Uint16Array(nz), s = new Uint16Array(nz);
+  for (let c = 0; c < p.n_col * p.n_col; c++) {
+    const o = c * nz;
+    let n = 0;
+    for (let i = cut; i < nz; i++) { v[i] = p.vox[o + i]; if (v[i] > 0 && v[i] >= thr) s[n++] = v[i]; }
+    if (!n) continue;
+    const kth = n > kcol ? s.subarray(0, n).sort().reverse()[kcol - 1] : 0;
+    let left = kcol;
+    for (let i = cut; i < nz && left > 0; i++) if (v[i] > kth && v[i] >= thr) { sel.push(o + i); left--; }
+    for (let i = cut; i < nz && left > 0; i++) if (v[i] === kth && v[i] >= thr && kth > 0) { sel.push(o + i); left--; }
+  }
+  const keep = Math.min(1, MAXC / Math.max(1, sel.length));
+  const nmax = Math.min(sel.length, MAXC + 1000);
+  const X = new Float32Array(8 * nmax), Y = new Float32Array(8 * nmax), Z = new Float32Array(8 * nmax), C = new Float32Array(8 * nmax);
+  const Dp = new Float32Array(8 * nmax);
+  const I = new Int32Array(12 * nmax), J = new Int32Array(12 * nmax), K = new Int32Array(12 * nmax);
+  let q = 0;
+  for (const idx of sel) {
+    if (q >= nmax) break;
+    if (keep < 1 && ((Math.imul(idx, 2654435761) >>> 0) / 4294967296) >= keep) continue;
+    const c = Math.floor(idx / nz), i = idx % nz;
+    const ex = -half + Math.floor(c / p.n_col) * p.cs, ny = -half + (c % p.n_col) * p.cs;
+    const cap = p.H * (1 - Math.max(Math.abs(ex), Math.abs(ny)) / half);
+    const zc = cap - (i + 0.5) * p.cs, val = p.vox[idx] / 65535, dm = p.z0 + p.dep[idx] * p.dz;
+    for (let t = 0; t < 8; t++) {
+      X[8 * q + t] = ex + CV[t][0] * h; Y[8 * q + t] = ny + CV[t][1] * h; Z[8 * q + t] = zc + CV[t][2] * h;
+      C[8 * q + t] = val; Dp[8 * q + t] = dm;
+    }
+    for (let t = 0; t < 12; t++) {
+      I[12 * q + t] = 8 * q + CT[3 * t]; J[12 * q + t] = 8 * q + CT[3 * t + 1]; K[12 * q + t] = 8 * q + CT[3 * t + 2];
+    }
+    q++;
+  }
+  $("nShown").textContent = q.toLocaleString("it-IT") +
+    (keep < 1 ? " di " + sel.length.toLocaleString("it-IT") + " (campione)" : "");
+
+  const vox = { type: "mesh3d", x: X.subarray(0, 8 * q), y: Y.subarray(0, 8 * q), z: Z.subarray(0, 8 * q),
+    i: I.subarray(0, 12 * q), j: J.subarray(0, 12 * q), k: K.subarray(0, 12 * q),
+    intensity: C.subarray(0, 8 * q), customdata: Dp.subarray(0, 8 * q), colorscale: SCALE, cmin, cmax, flatshading: true,
+    lighting: { ambient: 0.6, diffuse: 0.7, specular: 0.05, roughness: 0.9 }, showlegend: false,
+    colorbar: { title: { text: "R² corretto", font: { color: "#a1a1aa" } }, thickness: 12, len: 0.6, tickfont: { color: "#a1a1aa" } },
+    hovertemplate: "E %{x:.1f} m<br>N %{y:.1f} m<br>z %{z:.1f} m<br>R² %{intensity:.4f}<br>profondita' del massimo %{customdata:.2f} m<extra></extra>" };
+  const hasKnown = p.known.length > 0;
+  $("knownHelp").textContent = hasKnown ? p.known.length + " strutture note" : "nessuna parte nota";
+  $("known").disabled = !hasKnown;
+  let traces = $("outline").checked ? [outlineTrace(p), vox] : [vox];
+  if (hasKnown && $("known").checked) traces = traces.concat(knownTraces(p));
+  const ax = t => ({ title: { text: t, font: { color: "#a1a1aa" } }, color: "#a1a1aa", gridcolor: "#27272a", zerolinecolor: "#27272a", backgroundcolor: "rgba(0,0,0,0)" });
+  const layout = { margin: { l: 0, r: 0, t: 0, b: 0 }, paper_bgcolor: "rgba(0,0,0,0)",
+    scene: { xaxis: ax("Est [m]"), yaxis: ax("Nord [m]"), zaxis: ax("quota z [m]"), aspectmode: "data",
+             bgcolor: "rgba(0,0,0,0)" } };
+  if (!resetCamera && $("plot").layout && $("plot").layout.scene) layout.scene.camera = $("plot").layout.scene.camera;
+  Plotly.react("plot", traces, layout, { responsive: true, displaylogo: false });
+  if (resetCamera) drawMatch();
+}
+function restyleScale() {
+  const [cmin, cmax] = scale.call(this);
+  const gd = $("plot"), k = gd.data.findIndex(d => d.type === "mesh3d");
+  if (k >= 0) Plotly.restyle(gd, { cmin, cmax }, [k]);
+}
+$("thr").addEventListener("input", showThr);
+$("thr").addEventListener("change", () => draw(false));
+$("kcol").addEventListener("input", () => { $("kOut").textContent = $("kcol").value + " cubi"; });
+$("kcol").addEventListener("change", () => draw(false));
+$("cut").addEventListener("input", showCut);
+$("cut").addEventListener("change", () => draw(false));
+for (const id of ["smin", "smax"]) { $(id).addEventListener("input", function () { scale.call(this); }); $(id).addEventListener("change", restyleScale); }
+for (const id of ["outline", "known"]) $(id).addEventListener("change", () => draw(false));
+loadData().catch(f => { $("loader").textContent = "File dei dati non trovato: " + f; $("loader").hidden = false; throw f; })
+  .then(d => { D = d; init(); draw(true); });
+</script>
+</body>
+</html>
