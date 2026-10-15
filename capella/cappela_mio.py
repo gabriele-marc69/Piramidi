@@ -105,6 +105,7 @@ class Config:
     z_MAX: float = 0.0             # superficie [m]
     dz: float = 0.92               # risoluzione tomografica [m]
     A_orbit: float = 42_000.0      # apertura orbitale [m]
+    theta_deg: float = 45.0        # incidenza per Kz [gradi]; con la geometria del CPHD quella vera
     f_investigation: float = 12_500.0  # frequenza onde sismiche [Hz]
     v_seismic: float = 6000.0      # velocità onde sismiche [m/s]
     steer_2pi: bool = False        # True: exp(j*2*pi*Kz*z) (lettura letterale del paper);
@@ -294,9 +295,11 @@ def _try_read_with_sarpy(filepath: str, logger: logging.Logger,
     domain_type = g.get("DomainType", ch.get("DomainType", "FX"))
 
     # --- Banda Doppler effettiva (stima) ---
-    # B_cD = 2 * V * La / (λ * R)  — usiamo il valore di default se manca
+    # B_cD di un punto nel blocco letto = 2 V^2 T / (λ R), T = durata del blocco
     # (Bw e' la banda chirp in range, NON la banda Doppler: non usarla qui)
     B_cD = None  # None -> main() mantiene il default del paper (22 kHz)
+    if v_platform and r_ref and prf and fc and num_vectors > 1:
+        B_cD = 2 * v_platform ** 2 * (num_vectors / prf) / ((_C / fc) * r_ref)
 
     meta = {
         "fc":           fc,
@@ -1170,16 +1173,29 @@ def build_steering_matrix(K_z: np.ndarray, z: np.ndarray,
     return A
 
 
-def _tomo_pinv(n_sub: int, cfg: Config) -> np.ndarray:
-    """Pseudo-inversa A^+ (F x n_sub) della matrice di steering, complex64."""
+def _tomo_kz(n_sub: int, cfg: Config) -> np.ndarray:
+    """Kz [rad/m] delle n_sub misure: B_perp dalle posizioni reali (k_frac) se note."""
     frac = getattr(cfg, "k_frac", None)
     if frac is not None and len(frac) == n_sub:
         B_perp = np.asarray(frac, dtype=float) * cfg.A_orbit      # posizioni reali
     else:
         B_perp = np.linspace(0, cfg.A_orbit, n_sub)
-    theta = np.deg2rad(45.0)
-    K_z = (4 * np.pi * B_perp) / (cfg.lambda_sound * cfg.r_ref * np.sin(theta))
-    A = build_steering_matrix(K_z, cfg.z, cfg.steer_2pi)
+    return (4 * np.pi * B_perp) / (cfg.lambda_sound * cfg.r_ref * np.sin(np.deg2rad(cfg.theta_deg)))
+
+
+def tomo_ambiguity(n_sub: int, cfg: Config) -> float:
+    """Periodo di ambiguita' in z [m]: 2 pi / (c dKz), con dKz il passo piu' piccolo tra
+    posizioni distinte (anche con catene a posizioni non uniformi)."""
+    d = np.diff(np.unique(np.round(_tomo_kz(n_sub, cfg), 12)))
+    d = d[d > 0]
+    if not len(d):
+        return np.inf
+    return 2 * np.pi / d.min() / (2 * np.pi if cfg.steer_2pi else 1.0)
+
+
+def _tomo_pinv(n_sub: int, cfg: Config) -> np.ndarray:
+    """Pseudo-inversa A^+ (F x n_sub) della matrice di steering, complex64."""
+    A = build_steering_matrix(_tomo_kz(n_sub, cfg), cfg.z, cfg.steer_2pi)
     # rcond: scarta i valori singolari < 1e-3 del massimo (con molti passi la
     # matrice e' mal condizionata e la pinv piena amplificherebbe il rumore ~1e9)
     return np.linalg.pinv(A, rcond=1e-3).astype(np.complex64)
@@ -1921,7 +1937,8 @@ def line_tomogram(slc: np.ndarray, cfg: Config, logger: logging.Logger, geo: dic
     import dataclasses
     cfg2 = dataclasses.replace(cfg, N_D=int(tomo_nd), z_min=float(z_range[0]),
                                z_MAX=float(z_range[1]), dz=float(tomo_dz),
-                               chain_len=int(tomo_chain))
+                               chain_len=int(tomo_chain),
+                               theta_deg=float(np.degrees(geo["inc"])))
     n_az, n_rg = slc.shape
     h = cfg.patch // 2
     logger.info(f"TOMOGRAMMA: {pyramid} linea {line} (h={h_frac}), N_D={tomo_nd}, "
@@ -1974,11 +1991,9 @@ def line_tomogram(slc: np.ndarray, cfg: Config, logger: logging.Logger, geo: dic
     A_pinv = _tomo_pinv(Y.shape[0], cfg2)
     zc = cfg2.z
 
-    dK = (4 * np.pi * (cfg2.A_orbit / (tomo_nd - 1))) / (
-        cfg2.lambda_sound * cfg2.r_ref * np.sin(np.deg2rad(45.0)))
-    z_amb = 2 * np.pi / dK / (2 * np.pi if cfg2.steer_2pi else 1.0)
-    z_res = cfg2.delta_T
-    logger.info(f"  risoluzione nominale lambda*R/2A = {z_res:.2f} m ; periodo di "
+    z_amb = tomo_ambiguity(Y.shape[0], cfg2)
+    z_res = cfg2.delta_T * np.sin(np.deg2rad(cfg2.theta_deg))
+    logger.info(f"  risoluzione nominale lambda*R*sin(theta)/2A = {z_res:.2f} m ; periodo di "
                 f"ambiguita' in z = {z_amb:.0f} m ; soglie: ampiezza >= {a_thr:.3g}, "
                 f"qualita' >= {q_thr:.2f}")
 
@@ -2099,15 +2114,10 @@ def tomo_volume(slc: np.ndarray, geo: dict, cfg: Config, logger: logging.Logger,
     mask[:h], mask[n_az - h:], mask[:, :h], mask[:, n_rg - h:] = False, False, False, False
     rows, cols = np.nonzero(mask)
     npx, F = rows.size, len(cfg.z)
-    dK = (4 * np.pi * (cfg.A_orbit / (cfg.N_D - 1))) / (
-        cfg.lambda_sound * cfg.r_ref * np.sin(np.deg2rad(45.0)))
-    z_amb = 2 * np.pi / dK / (2 * np.pi if cfg.steer_2pi else 1.0)
+    cfg.theta_deg = float(np.degrees(geo["inc"]))
     logger.info(f"VOLUME {name}: {npx} pixel, N_D={cfg.N_D}, z in [{cfg.z[0]:.0f}, "
-                f"{cfg.z[-1]:.0f}] m passo {cfg.dz:g} m ({F} campioni), ambiguita' "
-                f"{z_amb:.0f} m; passa-banda {band[0]:g}-{band[1]:g} m (-3.1 dB), "
-                f"blocchi di {block} pixel")
-    if z_amb < cfg.z[-1] - cfg.z[0]:
-        logger.warning("  l'intervallo in z supera il periodo di ambiguita': aumenta N_D")
+                f"{cfg.z[-1]:.0f}] m passo {cfg.dz:g} m ({F} campioni), "
+                f"passa-banda {band[0]:g}-{band[1]:g} m (-3.1 dB), blocchi di {block} pixel")
 
     spectrum = dft2(slc, logger)
     Hraw = np.zeros((npx, F), dtype=np.float16)
@@ -2123,6 +2133,10 @@ def tomo_volume(slc: np.ndarray, geo: dict, cfg: Config, logger: logging.Logger,
         del shifts
         if A_pinv is None:
             A_pinv = _tomo_pinv(Y.shape[0], cfg)
+            z_amb = tomo_ambiguity(Y.shape[0], cfg)      # posizioni note dopo la prima stima
+            logger.info(f"  periodo di ambiguita' in z = {z_amb:.0f} m")
+            if z_amb < cfg.z[-1] - cfg.z[0]:
+                logger.warning("  l'intervallo in z supera il periodo di ambiguita': aumenta N_D")
         Hb = np.abs(A_pinv @ Y)                        # (F, pixel) float32
         Hraw[b0:b1] = Hb.T
         Hbp[b0:b1] = _zbandpass(Hb.T, cfg.dz, band[0], band[1])
@@ -3715,6 +3729,10 @@ def run_pipeline(cfg: Config, logger: logging.Logger,
         spectrum, cfg, logger, rows, cols)
     del spectrum
     Y = estimate_micromotion(patches, cfg, logger)
+    z_amb = tomo_ambiguity(Y.shape[0], cfg)
+    logger.info(f"  periodo di ambiguita' in z = {z_amb:.0f} m")
+    if z_amb < cfg.z[-1] - cfg.z[0]:
+        logger.warning("  l'intervallo in z supera il periodo di ambiguita': aumenta N_D")
     h = tomographic_focusing(Y, cfg, logger)
     mag, mag_db = generate_tomographic_magnitude(h, cfg, logger)
 
