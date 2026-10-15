@@ -1,0 +1,233 @@
+{
+  "piramide": "khafre",
+  "cphd": "CAPELLA_C13_SP_CPHD_HH_20241004001939_20241004002012.cphd",
+  "linee": 213,
+  "durata_s": 491.0,
+  "stadi": {
+    "1_slc": {
+      "punti": 45369,
+      "paper": {
+        "forma_az_rg": [
+          395,
+          1497
+        ],
+        "passo_rg_az_m": [
+          0.3996,
+          1.0142
+        ],
+        "sovracampionamento_az": 1,
+        "arrotondamento_pixel_rms_m": 0.315
+      },
+      "bp19": {
+        "passo_rg_az_m": [
+          0.3996,
+          0.2536
+        ],
+        "sovracampionamento_az": 4,
+        "arrotondamento_pixel_rms_m_teorico": 0.137
+      }
+    },
+    "2_banco": {
+      "paper": {
+        "coppie": 192,
+        "supporto_cicli_m": 0.98597,
+        "maschera_frazione": 0.5013,
+        "separazione_frazione": 0.00253,
+        "passo_frazione": 0.00253,
+        "ky_centri": [
+          -0.24337,
+          0.23339
+        ],
+        "strategia": "B_DL = B_cD/2 in N_D passi, catena slave -> master"
+      },
+      "bp19": {
+        "coppie": 248,
+        "supporto_cicli_m": 0.95791,
+        "maschera_frazione": 0.3411,
+        "separazione_frazione": 0.01562,
+        "passo_frazione": 0.0026,
+        "ky_centri": [
+          -0.3193,
+          0.29685
+        ],
+        "W": 147
+      }
+    },
+    "3_registrazione": {
+      "look_in_comune": 191,
+      "paper": {
+        "stimatore": "ampiezze 16x16, Hann, picco parabolico",
+        "rms_m_rg_az": [
+          0.00753,
+          0.02339
+        ],
+        "rms_per_separazione_m_per_ciclo_m": [
+          3.016,
+          9.369
+        ]
+      },
+      "bp19": {
+        "stimatore": "complessa 128x128 + core 24x32, upsample 100",
+        "rms_m_rg_az": [
+          0.01582,
+          0.0347
+        ],
+        "rms_per_separazione_m_per_ciclo_m": [
+          1.057,
+          2.318
+        ]
+      },
+      "corr_vettore_medio_tra_pixel_rg_az": [
+        0.0646,
+        0.0705
+      ],
+      "corr_traiettorie_grezze_rg": {
+        "mediana": -0.0052,
+        "quartili": [
+          -0.0824,
+          0.0732
+        ],
+        "frazione_oltre_0.5": 0.0
+      },
+      "corr_traiettorie_grezze_az": {
+        "mediana": 0.0009,
+        "quartili": [
+          -0.076,
+          0.077
+        ],
+        "frazione_oltre_0.5": 0.0008
+      },
+      "spearman_qualita_paper_coerenza_bp19": 0.7131
+    },
+    "4_correzione": {
+      "paper": {
+        "tipo": "passa-basso gaussiano su k, sigma 1; nessun fianco",
+        "varianza_tolta_mediana": 0.6638
+      },
+      "bp19": {
+        "tipo": "q = Y - G_arc, media delle mediane geometriche dei due archi",
+        "rms_correzione_m_rg_az": [
+          0.00161,
+          0.00284
+        ],
+        "varianza_tolta_mediana": -0.0277
+      },
+      "corr_traiettorie_ingresso_inversione_rg": {
+        "mediana": -0.0086,
+        "quartili": [
+          -0.1019,
+          0.0877
+        ],
+        "frazione_oltre_0.5": 0.0003
+      },
+      "corr_traiettorie_ingresso_inversione_az": {
+        "mediana": 0.0015,
+        "quartili": [
+          -0.0921,
+          0.0927
+        ],
+        "frazione_oltre_0.5": 0.0017
+      }
+    },
+    "5_fase": {
+      "paper": {
+        "modello": "exp(j Kz z), Kz = 4 pi B_perp/(lambda r sin theta), B_perp = k_frac * A_orbit",
+        "lambda_m": 0.48,
+        "A_orbit_m": 42000.0,
+        "r_m": 755611.8,
+        "theta_deg": 38.7,
+        "Kz_escursione_rad_m": 2.3276,
+        "risoluzione_2pi_su_escursione_m": 2.699,
+        "periodo_ambiguita_m": 515.6
+      },
+      "bp19": {
+        "modello": "a cos(G I(z)) + b sin(G I(z)), G = 4 pi dB/(r sin theta dt) t, I = int ds/l",
+        "l_sopra_sotto_2.4m": [
+          0.036858797794585174,
+          0.08074816571554078
+        ],
+        "G_escursione_rad_mediana": 0.197,
+        "G_escursione_finestra_W_rad_mediana": 0.116,
+        "equivalente_rad_m_sopra_sotto": [
+          3.153,
+          1.439
+        ],
+        "risoluzione_m_sopra_sotto": [
+          1.992,
+          4.365
+        ],
+        "profondita_max_leggibile_m": 315.64
+      }
+    },
+    "6_volume": {
+      "cubi": 14030295,
+      "cubi_bp19_positivi": 2100606,
+      "spearman_tutti": 0.2813,
+      "spearman_bp19_positivi": 0.1312,
+      "top1_sovrapposizione": 0.0425,
+      "top1_sovrapposizione_a_caso": 0.01,
+      "a_parita_di_profondita": {
+        "livelli": 232,
+        "spearman_mediana": 0.0175,
+        "spearman_quartili": [
+          -0.0114,
+          0.0953
+        ],
+        "top1_sovrapposizione": 0.009
+      },
+      "profondita_del_massimo_per_colonna": {
+        "colonne": 45369,
+        "differenza_mediana_m": 15.23,
+        "spearman": 0.0162
+      },
+      "corr_profili_medi_in_profondita": 0.6509
+    },
+    "7_parti_note": [
+      {
+        "n": 1,
+        "nome": "Corridoio discendente superiore (rivestito di granito)",
+        "celle": 904,
+        "paper_percentile": 33.6,
+        "paper_p": 0.6643,
+        "bp19_percentile": 49.3,
+        "bp19_p": 0.5075
+      },
+      {
+        "n": 2,
+        "nome": "Ingresso inferiore e corridoio nella roccia",
+        "celle": 2785,
+        "paper_percentile": 35.2,
+        "paper_p": 0.6484,
+        "bp19_percentile": 88.0,
+        "bp19_p": 0.1209
+      },
+      {
+        "n": 3,
+        "nome": "Corridoio orizzontale con saracinesca di granito",
+        "celle": 1779,
+        "paper_percentile": 36.1,
+        "paper_p": 0.6394,
+        "bp19_percentile": 66.1,
+        "bp19_p": 0.3397
+      },
+      {
+        "n": 4,
+        "nome": "Camera funeraria (scavata nella roccia, tetto a capanna)",
+        "celle": 1337,
+        "paper_percentile": 72.3,
+        "paper_p": 0.2777,
+        "bp19_percentile": 0.0,
+        "bp19_p": 1.0
+      },
+      {
+        "n": 0,
+        "nome": "tutte le parti note",
+        "celle": 6633,
+        "paper_percentile": 35.8,
+        "paper_p": 0.6424,
+        "bp19_percentile": 83.8,
+        "bp19_p": 0.1628
+      }
+    ]
+  }
+}

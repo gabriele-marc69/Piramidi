@@ -815,6 +815,10 @@ def generate_doppler_subapartures(
         u = int(cfg.shift_px) if cfg.shift_px > 0 else max(1, T // cfg.N_D)
         while u > 1 and chain * u > T:
             u -= 1
+        if chain * u > T:                            # l'ultima finestra uscirebbe dallo spettro
+            chain = max(1, T // u)
+            logger.warning(f"  N_D={cfg.N_D} supera la corsa delle finestre ({T} px): "
+                           f"{chain} coppie")
         starts0 = [0]
     elif chain == 1:
         u = max(1, int(round(B_DL * cfg.B_shift_ratio / cfg.B_cD * n_pulses)))
@@ -2518,7 +2522,7 @@ def write_bp19_pages(pyramids: list, title: str, out_dir: str, max_mb: float = 2
 BP19 = {
     # modello di profondita' di riferimento di Giza (calcare del Mokattam), dal pacchetto
     "layers": [(2.4, 0.036858797794585174), (None, 0.08074816571554078)],
-    "depth": (0.1, 0.05),                        # min, passo [m] sotto la superficie
+    "depth": (0.1, 0.5),                         # min, passo [m] sotto la superficie
     "below_base_m": 300.0,                       # profondita' fino a questa quota sotto la base
     "ref_support_bins": 3655, "ref_mask": 1241, "ref_sep": 62, "ref_step": 8,
     "ref_K": 295, "ref_W": 175,
@@ -3090,6 +3094,314 @@ def bp19_volume(logger: logging.Logger, name: str, out_dir: str, meta: dict, e: 
             "ctrl": round(meta["controllo"]["max_error_pixels"], 4),
             "pos": report["cubi_positivi_frazione"], "peak": peak,
             "line_n": round(float(e[central["iN"]]), 1)}
+
+
+# =============================================================================
+#  CONFRONTO (--confronto): metodo del paper e protocollo v1.9, stadio per stadio
+# =============================================================================
+
+def _spearman(a: np.ndarray, b: np.ndarray, n_max: int = 2_000_000, seed: int = 0) -> float:
+    """Correlazione di Spearman (su un sottocampione casuale di al massimo n_max coppie)."""
+    from scipy.stats import spearmanr
+    if a.size > n_max:
+        i = np.random.default_rng(seed).choice(a.size, n_max, replace=False)
+        a, b = a[i], b[i]
+    return round(float(spearmanr(a, b)[0]), 4)
+
+
+def _track_corr(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """Correlazione per pixel lungo i look (asse 0) di due serie [k, M, 2] -> [M, 2]."""
+    a = a - a.mean(0)
+    b = b - b.mean(0)
+    return (a * b).sum(0) / np.sqrt((a * a).sum(0) * (b * b).sum(0) + 1e-300)
+
+
+def confronto_pyramid(args, cfg: Config, logger: logging.Logger, name: str, out_dir: str) -> dict:
+    """Metodo del paper (come --tomo3d: sotto-aperture B_DL/N_D con N_D = --tomo_nd, tracking
+    delle ampiezze, passa-basso su k, h = A+ Y, sull'SLC senza sovracampionamento) e
+    protocollo v1.9 sugli stessi punti a terra (linee E-O, pixel della superficie con
+    layover) della corsa --bp19 salvata in out_dir/bp19_<name> (se manca, la esegue).
+    Stadi: SLC, banco, registrazione, correzione, fase, volume, parti note.
+    Uscita in out_dir/confronto_<name> (confronto.json, confronto.png)."""
+    bdir = os.path.join(out_dir, f"bp19_{name}")
+    if not os.path.exists(os.path.join(bdir, "result.npz")):
+        logger.info(f"confronto {name}: manca la corsa --bp19 in {bdir}, la eseguo")
+        bp19_pyramid(args, cfg, logger, name, bdir)
+    cdir = os.path.join(out_dir, f"confronto_{name}")
+    os.makedirs(cdir, exist_ok=True)
+    with open(os.path.join(bdir, "report.json"), encoding="utf-8") as f:
+        rep = json.load(f)
+    with np.load(os.path.join(bdir, "bank.npz")) as f:
+        bk = {k: f[k] for k in ("raw_shift_px", "q", "coherence", "arc_correction_px",
+                                "ky_looks", "midpoint_bins", "east_m", "north_m", "surface_m")}
+    with np.load(os.path.join(bdir, "geometry.npz")) as f:
+        rate = f["rate"]
+    with np.load(os.path.join(bdir, "result.npz")) as f:
+        vol_b, cs, depths = f["cube_score"], float(f["cube_m"]), f["depth_m"]
+        e, lines_b = f["east_m"], f["lines"]
+    side, H = PYRAMIDS[name][2], PYRAMIDS[name][3]
+    half, n_col = side / 2, len(e)
+    lines = lines_b
+    if args.bp19_lines > 0:                              # prova: solo le linee centrali
+        lines = lines[max(0, len(lines) // 2 - args.bp19_lines // 2):][:args.bp19_lines]
+    idx = (np.searchsorted(lines_b, lines)[:, None] * n_col + np.arange(n_col)[None, :]).ravel()
+    sp_b = np.array(rep["spacing_range_azimuth_m"])      # metri per pixel (range, azimuth)
+    rb = rep["banco"]
+    t_start = time.time()
+
+    # --- metodo del paper: SLC senza sovracampionamento, stessa scena e impulsi del bp19
+    rad = (half + BP19["flank_margin_m"]) * np.sqrt(2)
+    slc, geo = backproject_cphd(args.cphd, cfg, logger, rep["impulsi"][0], rep["impulsi"][1],
+                                2 * (rad + 20), 2 * (rad + 30) + 1.3 * H, sign_mult=args.bp_sign,
+                                center_on=name)
+    px, _, _ = _pyr_px_fn(geo, name)
+    rc = np.array([px(a, b, c) for a, b, c in
+                   zip(bk["east_m"][idx], bk["north_m"][idx], bk["surface_m"][idx])])
+    rows, cols = np.floor(rc + 0.5).astype(int).T
+    hp = cfg.patch // 2
+    if (rows.min() < hp or rows.max() > slc.shape[0] - hp or cols.min() < hp or
+            cols.max() > slc.shape[1] - hp):
+        raise RuntimeError("confronto: le patch del paper escono dall'immagine")
+    sp_p = np.array([geo["dr"], geo["da"]])
+    cfg_p = dataclasses.replace(cfg, N_D=args.tomo_nd, chain_len=0,
+                                theta_deg=float(np.degrees(geo["inc"])))
+    cfg_p.z = -depths                                    # z <= 0: sotto la superficie del pixel
+    spectrum = dft2(slc, logger)
+    n_az = spectrum.shape[0]
+    shifts, _, _ = generate_doppler_subapartures(spectrum, cfg_p, logger, rows, cols)
+    strat = dict(_LAST_STRATEGY)
+    del spectrum, slc
+    Y0 = estimate_micromotion(shifts, dataclasses.replace(cfg_p, lpf_sigma=0.0), logger)
+    Y, Qp = estimate_micromotion(shifts, cfg_p, logger, return_quality=True)
+    ms = np.sort([s_[3] for s_ in shifts])               # inizio del master di ogni coppia
+    del shifts
+    A_pinv = _tomo_pinv(Y.shape[0], cfg_p)
+    kz = _tomo_kz(Y.shape[0], cfg_p)
+    z_amb = tomo_ambiguity(Y.shape[0], cfg_p)
+    if z_amb < depths[-1]:
+        logger.warning(f"  paper: periodo di ambiguita' {z_amb:.0f} m < profondita' {depths[-1]:.0f} m")
+    nz = vol_b.shape[2]
+    cid = np.floor(depths / cs).astype(int)
+    st = np.flatnonzero(np.r_[True, np.diff(cid) > 0])
+    vol_p = np.zeros_like(vol_b)                         # [iE, iN, cubo dalla superficie]
+    for li, iN in enumerate(lines):
+        Hl = np.abs(A_pinv @ Y[:, li * n_col:(li + 1) * n_col]).T      # colonne x profondita'
+        vol_p[:, iN, cid[st]] = np.maximum.reduceat(Hl, st, axis=1)
+    zb, zmax = rep["config"]["below_base_m"], rep["profondita_max_leggibile_m"]
+    cap = H * (1 - np.maximum(np.abs(e)[:, None], np.abs(e)[None, :]) / half)   # [iE, iN]
+    valid = np.arange(nz)[None, None, :] * cs < np.minimum(cap[..., None] + zb, zmax)
+    vol_p[~valid] = 0
+    vol_p /= max(float(vol_p.max()), 1e-30)              # |h| normalizzato (come nel paper)
+    logger.info(f"confronto {name}: metodo del paper su {len(idx)} punti, {Y.shape[0]} coppie, "
+                f"{time.time() - t_start:.0f} s")
+
+    # --- 1: SLC e punti
+    off = (rc - np.c_[rows, cols]) * sp_p[::-1]
+    S = {"1_slc": {
+        "punti": int(len(idx)),
+        "paper": {"forma_az_rg": [int(geo["n_az"]), int(geo["n_rg"])],
+                  "passo_rg_az_m": sp_p.round(4).tolist(), "sovracampionamento_az": 1,
+                  "arrotondamento_pixel_rms_m": round(float(np.sqrt((off ** 2).sum(1).mean())), 3)},
+        "bp19": {"passo_rg_az_m": sp_b.round(4).tolist(),
+                 "sovracampionamento_az": rep["sovracampionamento_azimuth"],
+                 "arrotondamento_pixel_rms_m_teorico": round(float(np.sqrt((sp_b ** 2).sum() / 12)), 3)}}}
+
+    # --- 2: banco di sotto-aperture (frequenza spaziale lungo le righe, cicli/m)
+    bin_p = 1.0 / (n_az * geo["da"])
+    u, bw = strat["u"], strat["bw_px"]
+    ky_p = (ms + bw / 2 + u / 2 - n_az // 2) * bin_p     # centro di ogni coppia master/slave
+    mid_b = bk["midpoint_bins"]
+    bin_b = float((bk["ky_looks"][-1] - bk["ky_looks"][0]) / (mid_b[-1] - mid_b[0]))
+    ky_b = bk["ky_looks"]
+    sup_p, sup_b = n_az * bin_p, rb["S"] * bin_b
+    S["2_banco"] = {
+        "paper": {"coppie": int(len(ms)), "supporto_cicli_m": round(sup_p, 5),
+                  "maschera_frazione": round(bw / n_az, 4), "separazione_frazione": round(u / n_az, 5),
+                  "passo_frazione": round(u / n_az, 5), "ky_centri": [round(float(ky_p[0]), 5), round(float(ky_p[-1]), 5)],
+                  "strategia": "B_DL = B_cD/2 in N_D passi, catena slave -> master"},
+        "bp19": {"coppie": int(rb["K"]), "supporto_cicli_m": round(sup_b, 5),
+                 "maschera_frazione": round(rb["mask"] / rb["S"], 4),
+                 "separazione_frazione": round(rb["sep"] / rb["S"], 5),
+                 "passo_frazione": round(rb["step"] / rb["S"], 5),
+                 "ky_centri": [round(float(ky_b[0]), 5), round(float(ky_b[-1]), 5)], "W": int(rb["W"])}}
+
+    # --- 3: registrazione (metri, componenti range e azimuth); paper interpolato sui look del bp19
+    Yp = np.stack([Y0.real * sp_p[0], Y0.imag * sp_p[1]], -1)          # [k, M, 2] grezzo
+    Ypl = np.stack([Y.real * sp_p[0], Y.imag * sp_p[1]], -1)           # dopo il passa-basso
+    Yb = bk["raw_shift_px"][:, idx] * sp_b                             # [K, M, 2] grezzo
+    qb = bk["q"][idx].transpose(1, 0, 2) * sp_b                        # [K, M, 2] corretto
+    kb = (ky_b >= ky_p[0]) & (ky_b <= ky_p[-1])
+    j = np.clip(np.searchsorted(ky_p, ky_b[kb]) - 1, 0, len(ky_p) - 2)
+    w = ((ky_b[kb] - ky_p[j]) / (ky_p[j + 1] - ky_p[j]))[:, None, None]
+    interp = lambda a: a[j] * (1 - w) + a[j + 1] * w
+    r_raw = _track_corr(interp(Yp), Yb[kb])
+    r_in = _track_corr(interp(Ypl), qb[kb])
+    mean_r = [round(float(np.corrcoef(Yp.mean(0)[:, c], Yb.mean(0)[:, c])[0, 1]), 4) for c in (0, 1)]
+    stat = lambda r: {"mediana": round(float(np.median(r)), 4),
+                      "quartili": np.percentile(r, [25, 75]).round(4).tolist(),
+                      "frazione_oltre_0.5": round(float((r > 0.5).mean()), 4)}
+    rms = lambda a: np.sqrt((a ** 2).mean((0, 1)))
+    S["3_registrazione"] = {
+        "look_in_comune": int(kb.sum()),
+        "paper": {"stimatore": "ampiezze 16x16, Hann, picco parabolico",
+                  "rms_m_rg_az": rms(Yp).round(5).tolist(),
+                  "rms_per_separazione_m_per_ciclo_m": (rms(Yp) / (u * bin_p)).round(3).tolist()},
+        "bp19": {"stimatore": "complessa 128x128 + core 24x32, upsample 100",
+                 "rms_m_rg_az": rms(Yb).round(5).tolist(),
+                 "rms_per_separazione_m_per_ciclo_m": (rms(Yb) / (rb["sep"] * bin_b)).round(3).tolist()},
+        "corr_vettore_medio_tra_pixel_rg_az": mean_r,
+        "corr_traiettorie_grezze_rg": stat(r_raw[:, 0]), "corr_traiettorie_grezze_az": stat(r_raw[:, 1]),
+        "spearman_qualita_paper_coerenza_bp19": _spearman(Qp, bk["coherence"][:, idx].mean(0))}
+
+    # --- 4: correzione (paper: passa-basso su k; bp19: archi di fianco)
+    var_k = lambda a: a.var(0).sum(-1)
+    S["4_correzione"] = {
+        "paper": {"tipo": f"passa-basso gaussiano su k, sigma {cfg_p.lpf_sigma:g}; nessun fianco",
+                  "varianza_tolta_mediana": round(float(np.median(1 - var_k(Ypl) / (var_k(Yp) + 1e-300))), 4)},
+        "bp19": {"tipo": "q = Y - G_arc, media delle mediane geometriche dei due archi",
+                 "rms_correzione_m_rg_az": np.sqrt(((bk["arc_correction_px"] * sp_b) ** 2).mean(0)).round(5).tolist(),
+                 "varianza_tolta_mediana": round(float(np.median(1 - var_k(qb) / (var_k(Yb) + 1e-300))), 4)},
+        "corr_traiettorie_ingresso_inversione_rg": stat(r_in[:, 0]),
+        "corr_traiettorie_ingresso_inversione_az": stat(r_in[:, 1])}
+
+    # --- 5: modello di fase (rad per metro di profondita')
+    G = rate[:, idx]
+    W = int(rb["W"])
+    spanG, spanW = np.ptp(G, axis=0), np.abs(G[W - 1:] - G[:-W + 1]).max(0)
+    ell = [l for _, l in BP19["layers"]]
+    S["5_fase"] = {
+        "paper": {"modello": "exp(j Kz z), Kz = 4 pi B_perp/(lambda r sin theta), B_perp = k_frac * A_orbit",
+                  "lambda_m": round(cfg_p.lambda_sound, 4), "A_orbit_m": cfg_p.A_orbit,
+                  "r_m": round(cfg_p.r_ref, 1), "theta_deg": round(cfg_p.theta_deg, 2),
+                  "Kz_escursione_rad_m": round(float(np.ptp(kz)), 4),
+                  "risoluzione_2pi_su_escursione_m": round(float(2 * np.pi / np.ptp(kz)), 3),
+                  "periodo_ambiguita_m": round(float(z_amb), 1)},
+        "bp19": {"modello": "a cos(G I(z)) + b sin(G I(z)), G = 4 pi dB/(r sin theta dt) t, I = int ds/l",
+                 "l_sopra_sotto_2.4m": ell,
+                 "G_escursione_rad_mediana": round(float(np.median(spanG)), 3),
+                 "G_escursione_finestra_W_rad_mediana": round(float(np.median(spanW)), 3),
+                 "equivalente_rad_m_sopra_sotto": [round(float(np.median(spanW)) / l, 3) for l in ell],
+                 "risoluzione_m_sopra_sotto": [round(2 * np.pi * l / float(np.median(spanW)), 3) for l in ell],
+                 "profondita_max_leggibile_m": zmax}}
+
+    # --- 6: volume (cubi della stessa griglia)
+    m = valid[:, lines]
+    a, b = vol_p[:, lines][m], vol_b[:, lines][m]
+    pos = b > 0
+    ta, tb = a >= np.quantile(a, 0.99), b >= np.quantile(b, 0.99)
+    col = m.any(-1)
+    zp = np.where(m, vol_p[:, lines], -1).argmax(-1)[col] * cs
+    zq = np.where(m, vol_b[:, lines], -1).argmax(-1)[col] * cs
+    okc = vol_b[:, lines].max(-1)[col] > 0
+    prof = lambda v: np.array([v[:, lines][..., k][m[..., k]].mean() if m[..., k].any() else np.nan
+                               for k in range(nz)])
+    pp, pb = prof(vol_p), prof(vol_b)
+    fin = np.isfinite(pp) & np.isfinite(pb)
+    from scipy.stats import rankdata                     # a parita' di profondita': ranghi per livello
+    rho_z, n_top, n_both = [], 0, 0
+    for k in range(nz):
+        mk = m[..., k]
+        if mk.sum() < 30:
+            continue
+        xa = rankdata(vol_p[:, lines][..., k][mk]) / mk.sum()
+        vb_k = vol_b[:, lines][..., k][mk]
+        xb = rankdata(vb_k) / mk.sum()
+        if np.ptp(xa) > 0 and np.ptp(xb) > 0:
+            rho_z.append(float(np.corrcoef(xa, xb)[0, 1]))
+        tb_k = (xb > 0.99) & (vb_k > 0)
+        n_top += int(tb_k.sum()); n_both += int((tb_k & (xa > 0.99)).sum())
+    S["6_volume"] = {
+        "cubi": int(m.sum()), "cubi_bp19_positivi": int(pos.sum()),
+        "spearman_tutti": _spearman(a, b),
+        "spearman_bp19_positivi": _spearman(a[pos], b[pos]) if pos.sum() > 10 else None,
+        "top1_sovrapposizione": round(float((ta & tb).sum() / max(1, tb.sum())), 4),
+        "top1_sovrapposizione_a_caso": 0.01,
+        "a_parita_di_profondita": {
+            "livelli": len(rho_z),
+            "spearman_mediana": round(float(np.median(rho_z)), 4) if rho_z else None,
+            "spearman_quartili": np.percentile(rho_z, [25, 75]).round(4).tolist() if rho_z else None,
+            "top1_sovrapposizione": round(n_both / max(1, n_top), 4)},
+        "profondita_del_massimo_per_colonna": {
+            "colonne": int(okc.sum()),
+            "differenza_mediana_m": round(float(np.median(np.abs(zp - zq)[okc])), 2) if okc.any() else None,
+            "spearman": _spearman(zp[okc], zq[okc]) if okc.sum() > 10 else None},
+        "corr_profili_medi_in_profondita": round(float(np.corrcoef(pp[fin], pb[fin])[0, 1]), 4)}
+
+    # --- 7: parti note (stesso test: celle delle parti contro 1000 traslazioni >= 30 m)
+    ks = load_known_structures(logger).get(name, [])
+    match = []
+    if ks and len(lines) == n_col:
+        mp = bp19_known_match(vol_p, e, H, half, ks, cs)
+        mb = {r["n"]: r for r in rep["corrispondenza_parti_note"]}
+        match = [{"n": r["n"], "nome": r["nome"], "celle": r["celle"],
+                  "paper_percentile": r["percentile"], "paper_p": r["p"],
+                  "bp19_percentile": mb[r["n"]]["percentile"] if r["n"] in mb else None,
+                  "bp19_p": mb[r["n"]]["p"] if r["n"] in mb else None} for r in mp]
+    S["7_parti_note"] = match
+
+    # --- figura
+    iN = lines[len(lines) // 2]
+    fig, ax = plt.subplots(2, 3, figsize=(21, 11), layout="constrained")
+    for y0, (lab, kyc, half_m, sep_ky) in enumerate((
+            ("paper", ky_p, bw * bin_p / 2, u * bin_p),
+            ("bp19", ky_b, rb["mask"] * bin_b / 2, rb["sep"] * bin_b))):
+        for k, c in ((0, "C0"), (len(kyc) - 1, "C3")):
+            for s_, dy in ((-1, 0.0), (1, 0.25)):
+                x0 = kyc[k] + s_ * sep_ky / 2
+                ax[0, 0].plot([x0 - half_m, x0 + half_m], [2 * y0 + dy + 0.5 * (k > 0)] * 2, c, lw=4)
+        ax[0, 0].plot(kyc, np.full(len(kyc), 2 * y0 + 1.5), "k|", ms=6)
+    ax[0, 0].set_yticks([0.6, 2.6]); ax[0, 0].set_yticklabels(["paper", "bp19"])
+    ax[0, 0].set_xlabel("frequenza spaziale lungo le righe [cicli/m]")
+    ax[0, 0].set_title("2. Banco: prima (blu) e ultima (rosso) coppia, master/slave; | = centri")
+    p_c = (len(lines) // 2) * n_col + n_col // 2
+    zs = lambda v: (v - v.mean()) / (v.std() + 1e-300)
+    for c, ls in ((0, "-"), (1, "--")):
+        ax[0, 1].plot(ky_p, zs(Ypl[:, p_c, c]), "C0" + ls, lw=1, label=f"paper {'rg' if c == 0 else 'az'}")
+        ax[0, 1].plot(ky_b, zs(qb[:, p_c, c]), "C3" + ls, lw=1, label=f"bp19 q {'rg' if c == 0 else 'az'}")
+    ax[0, 1].set_xlabel("centro della coppia [cicli/m]"); ax[0, 1].legend(fontsize=8)
+    ax[0, 1].set_title("3-4. Traiettoria del punto centrale (normalizzata), ingresso dell'inversione")
+    for c, nm_ in ((0, "range"), (1, "azimuth")):
+        ax[0, 2].hist(r_raw[:, c], 60, range=(-1, 1), histtype="step", lw=1.5, label=f"grezze {nm_}")
+        ax[0, 2].hist(r_in[:, c], 60, range=(-1, 1), histtype="step", lw=1.5, ls="--", label=f"ingresso {nm_}")
+    ax[0, 2].set_xlabel("correlazione per punto, paper contro bp19"); ax[0, 2].legend(fontsize=8)
+    ax[0, 2].set_title("3-4. Correlazione delle traiettorie sui look in comune")
+    ext = [e[0], e[-1], nz * cs, 0]
+    for k, (v, ttl, cm) in enumerate(((vol_b, "bp19: R$^2$ corretto", LinearSegmentedColormap.from_list("ng", BP19_SCALE)),
+                                      (vol_p, "paper: |h| normalizzato", "jet"))):
+        sl_ = np.where(valid[:, iN], v[:, iN], np.nan).T
+        im = ax[1, k].imshow(sl_, aspect="auto", extent=ext, cmap=cm, vmin=0,
+                             vmax=float(np.nanmax(sl_)) or 1, interpolation="nearest")
+        ax[1, k].set_title(f"6. {ttl} - linea E-O a N {e[iN]:+.1f} m")
+        ax[1, k].set_xlabel("Est [m]"); ax[1, k].set_ylabel("profondita' dalla superficie [m]")
+        fig.colorbar(im, ax=ax[1, k])
+    zc = (np.arange(nz) + 0.5) * cs
+    ax[1, 2].plot(pp / np.nanmax(pp), zc, "C0", label="paper |h| medio")
+    ax[1, 2].plot(pb / np.nanmax(pb), zc, "C3", label="bp19 R$^2$ medio")
+    ax[1, 2].invert_yaxis(); ax[1, 2].legend(); ax[1, 2].grid(alpha=0.3)
+    ax[1, 2].set_xlabel("media sui cubi validi (normalizzata)"); ax[1, 2].set_ylabel("profondita' [m]")
+    ax[1, 2].set_title("6. Profili medi in profondita'")
+    fig.suptitle(f"{name.capitalize()} - {os.path.basename(args.cphd)} - paper (N_D={len(ms)}) "
+                 f"contro protocollo v1.9 (K={rb['K']}, W={W})")
+    fig.savefig(os.path.join(cdir, "confronto.png"), dpi=110)
+    plt.close(fig)
+    np.savez_compressed(os.path.join(cdir, "confronto.npz"), vol_paper=vol_p.astype(np.float16),
+                        ky_paper=ky_p, Y_paper_px=Y0, Y_paper_lpf_px=Y, quality_paper=Qp,
+                        rows_paper=rows, cols_paper=cols, kz_paper=kz, corr_raw=r_raw, corr_input=r_in)
+    out = {"piramide": name, "cphd": os.path.basename(args.cphd), "linee": int(len(lines)),
+           "durata_s": round(time.time() - t_start, 1), "stadi": S}
+    with open(os.path.join(cdir, "confronto.json"), "w", encoding="utf-8") as f:
+        json.dump(out, f, indent=2, ensure_ascii=False)
+    s3, s6 = S["3_registrazione"], S["6_volume"]
+    logger.info(f"  3 registrazione: corr traiettorie grezze mediana rg {s3['corr_traiettorie_grezze_rg']['mediana']:+.3f} "
+                f"az {s3['corr_traiettorie_grezze_az']['mediana']:+.3f}; vettore medio rg {mean_r[0]:+.3f} az {mean_r[1]:+.3f}")
+    logger.info(f"  6 volume: Spearman {s6['spearman_tutti']}, top 1 % in comune "
+                f"{s6['top1_sovrapposizione']:.3f} (a caso 0.01), profili {s6['corr_profili_medi_in_profondita']}; "
+                f"a parita' di profondita' Spearman {s6['a_parita_di_profondita']['spearman_mediana']}, "
+                f"top 1 % {s6['a_parita_di_profondita']['top1_sovrapposizione']}")
+    for r in match:
+        logger.info(f"  parte nota {r['n']:2d} {r['nome'][:44]:44s}: paper p {r['paper_p']:.4f} | bp19 p {r['bp19_p']}")
+    logger.info(f"  → {cdir}")
+    return out
 
 
 # =============================================================================
@@ -3883,6 +4195,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--bp19_refit", action="store_true",
                    help="--bp19: rifa solo il fit (e la pagina) dalle misure gia' salvate in "
                         "<out>/bp19_<piramide> (bank.npz, geometry.npz, report.json).")
+    p.add_argument("--confronto", action="store_true",
+                   help="Metodo del paper (N_D = --tomo_nd) e --bp19 sugli stessi punti, stadio "
+                        "per stadio e sulle parti note (piramidi --bp19_pyr; misure --bp19 da "
+                        "<out>/bp19_<piramide>, eseguite se mancano). Uscita in "
+                        "<out>/confronto_<piramide>.")
     p.add_argument("--eco", action="store_true",
                    help="Ecografia dal CPHD: test dell'ombra sulla piramide --eco_pyr e, con "
                         "--eco_line o --eco_pick, sezione verticale lungo la retta (SAFT con "
@@ -4056,6 +4373,14 @@ def main() -> int:
             write_voxel_html(pyrs, "Voxel 3D delle piramidi" +
                              (f" - {date.group(1)}" if date else ""), out_html)
             logger.info(f"  → {out_html}")
+            return 0
+
+        if args.confronto:
+            if args.demo or args.focus != "bp":
+                raise SystemExit("--confronto richiede dati reali con --focus bp")
+            names = list(PYRAMIDS) if args.bp19_pyr == "all" else [args.bp19_pyr]
+            for nm in names:
+                confronto_pyramid(args, cfg, logger, nm, cfg.out_dir)
             return 0
 
         if args.bp19:

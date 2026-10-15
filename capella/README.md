@@ -79,3 +79,20 @@ In `--out`:
   caricarlo con `<script>` anche aperta dal disco;
 - `bp19_<piramide>/`: `bank.npz`, `geometry.npz`, `result.npz` (cubi in float32 e
   profondità del massimo), `report.json`, `tomogramma_linea.png`.
+
+## Confronto con il metodo del paper (`--confronto`)
+
+```bash
+python cappela_mio.py --cphd ... --confronto --bp19_pyr khufu --out output_bp19_20240916_khufu
+```
+
+Fa girare sugli stessi punti a terra il metodo dell'articolo di Biondi e Malanga
+(come `--tomo3d`: sotto-aperture Doppler B_DL/N_D con N_D = `--tomo_nd`, tracking
+delle ampiezze, passa-basso, h = A†Y) e il protocollo v1.9 (dalle misure salvate in
+`bp19_<piramide>/`, o rifatte se mancano), e li confronta stadio per stadio: SLC,
+banco di sotto-aperture, registrazione, correzione, fase, volume, parti note.
+Scrive `confronto_<piramide>/confronto.json`, `confronto.png` e `confronto.npz`
+(volume del paper).
+
+I risultati delle 6 corse (3 piramidi, 16/09 e 04/10/2024) sono in
+[`confronto/`](confronto/) (`.json` e `.png`).
